@@ -58,6 +58,7 @@ type Screen =
   | "quickCategories"
   | "quickReportDetails"
   | "quickReportDetail"
+  | "quickReportHistory"
   | "reportDetails"
   | "reportLocation"
   | "reportEvidence"
@@ -74,15 +75,11 @@ type Screen =
   | "supplementSubmitting"
   | "supplementSuccess"
   | "supplementFailure"
-  | "sosActivate"
-  | "sosConfirm"
   | "sosSending"
   | "sosOutcome"
   | "sosSent"
-  | "sosCancelled"
-  | "sosUnavailable"
-  | "sosNotDelivered"
-  | "sosStatusUnavailable"
+  | "sosHistory"
+  | "sosHistoryDetail"
   | "alerts"
   | "alertsEmpty"
   | "alertsUnavailable"
@@ -221,6 +218,7 @@ type SosEvent = {
   reference: string;
   createdAt: string;
   location: string;
+  acknowledged: boolean;
 };
 
 type StaffProfile = {
@@ -394,6 +392,7 @@ const screenTitles: Partial<Record<Screen, string>> = {
   quickCategories: "Quick report",
   quickReportDetails: "Add details to report",
   quickReportDetail: "Quick report status",
+  quickReportHistory: "Quick Report Timeline",
   reportDetails: "Report an incident",
   reportLocation: "Report an incident",
   reportEvidence: "Report an incident",
@@ -409,15 +408,11 @@ const screenTitles: Partial<Record<Screen, string>> = {
   supplementSubmitting: "Sending information",
   supplementSuccess: "Information added",
   supplementFailure: "Submission unavailable",
-  sosActivate: "Personal Emergency Alert",
-  sosConfirm: "Confirm SOS activation",
   sosSending: "Processing alert",
   sosOutcome: "SOS request activated",
   sosSent: "SOS contact status",
-  sosCancelled: "Request cancelled",
-  sosUnavailable: "Location unavailable",
-  sosNotDelivered: "Request not delivered",
-  sosStatusUnavailable: "Status unavailable",
+  sosHistory: "SOS History",
+  sosHistoryDetail: "SOS Request Status",
   alerts: "Alerts",
   alertsEmpty: "Alerts",
   alertsUnavailable: "Alerts",
@@ -603,17 +598,22 @@ export default function ICEApp() {
   const [supplementFailurePreview, setSupplementFailurePreview] = useState(false);
   const [supplementSaving, setSupplementSaving] = useState(false);
   const supplementSendLock = useRef(false);
-  const [sosHasLocation, setSosHasLocation] = useState(true);
-  const [sosAcknowledged, setSosAcknowledged] = useState(false);
-  const [sosEvent, setSosEvent] = useState<SosEvent | null>(null);
-  const [sosRequestFailed, setSosRequestFailed] = useState(false);
-  const [demoSosStatus, setDemoSosStatus] = useState("Request has not been submitted.");
+  const [sosHistory, setSosHistory] = useState<SosEvent[]>([]);
+  const [selectedSosReference, setSelectedSosReference] = useState<string | null>(null);
   const sosActivationLock = useRef(false);
   const sosEventSequence = useRef(0);
+  const [sosHoldProgress, setSosHoldProgress] = useState(0);
+  const sosHoldTimeoutRef = useRef<number | null>(null);
+  const sosHoldFrameRef = useRef<number | null>(null);
 
   useEffect(() => () => {
     quickEvidenceObjectUrls.forEach((url) => URL.revokeObjectURL(url));
   }, [quickEvidenceObjectUrls]);
+
+  useEffect(() => () => {
+    if (sosHoldTimeoutRef.current !== null) window.clearTimeout(sosHoldTimeoutRef.current);
+    if (sosHoldFrameRef.current !== null) cancelAnimationFrame(sosHoldFrameRef.current);
+  }, []);
 
   const selectedReport = reports.find((report) => report.id === selectedReportId) ?? reports[0];
   const selectedQuickReport = quickReports.find((report) => report.key === selectedQuickReportKey);
@@ -621,6 +621,8 @@ export default function ICEApp() {
   const latestSentQuickReport = quickReports.find((report) => report.sendStatus === "sent");
   const selectedAlert = alerts.find((alert) => alert.id === selectedAlertId) ?? alerts[0];
   const selectedFeed = feed.find((item) => item.id === selectedFeedId) ?? feed[0];
+  const latestSosEvent = sosHistory[0];
+  const selectedSosEvent = sosHistory.find((item) => item.reference === selectedSosReference) ?? latestSosEvent;
   const notificationItems = useMemo<NotificationItem[]>(() => [
     ...initialSystemNotifications,
     ...reports.map((report) => ({
@@ -643,10 +645,6 @@ export default function ICEApp() {
     setScreenStack((previous) => [...previous, screen]);
     setScreen(next);
     if (tab) setActiveTab(tab);
-  }
-
-  function replace(next: Screen) {
-    setScreen(next);
   }
 
   function back() {
@@ -933,41 +931,88 @@ export default function ICEApp() {
     }, 850);
   }
 
-  function openSos() {
-    setScreenStack([]);
-    setScreen(sosEvent ? sosRequestFailed ? "sosNotDelivered" : "sosOutcome" : "sosActivate");
-  }
-
-  function sendMockSos() {
+  function activateSos() {
     if (sosActivationLock.current) return;
-    if (sosEvent && !sosRequestFailed) {
+    if (latestSosEvent && !latestSosEvent.acknowledged) {
+      setSelectedSosReference(latestSosEvent.reference);
+      setScreenStack([]);
       setScreen("sosOutcome");
       return;
     }
     const createdAt = new Date().toISOString();
     const date = createdAt.slice(0, 10).replaceAll("-", "");
-    const event = sosEvent ?? {
-      reference: `SOS-${date}-${String(++sosEventSequence.current).padStart(3, "0")}`,
+    const reference = `SOS-${date}-${String(++sosEventSequence.current).padStart(3, "0")}`;
+    const event: SosEvent = {
+      reference,
       createdAt,
-      location: sosHasLocation ? "Demo location (not GPS)" : "Unavailable",
+      location: "Requesting device location…",
+      acknowledged: false,
     };
     sosActivationLock.current = true;
-    if (!sosEvent) setSosEvent(event);
-    setSosRequestFailed(false);
-    setSosAcknowledged(false);
-    setDemoSosStatus("Processing this local demo request. No contact notification has been sent.");
+    setSosHistory((previous) => [event, ...previous]);
+    setSelectedSosReference(reference);
+    setScreenStack([]);
     setScreen("sosSending");
-    window.setTimeout(() => {
-      setDemoSosStatus("Request submitted in this local demo. No contact notification was sent.");
+
+    const resolveLocation = new Promise<string>((resolve) => {
+      if (!("geolocation" in navigator)) {
+        resolve("Location unavailable on this device");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          resolve(`Lat ${latitude.toFixed(4)}, Lng ${longitude.toFixed(4)} (±${Math.round(accuracy)}m)`);
+        },
+        (error) => {
+          resolve(error.code === error.PERMISSION_DENIED ? "Location permission denied" : "Location unavailable");
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
+      );
+    });
+    const minimumDelay = new Promise<void>((resolve) => { window.setTimeout(resolve, 900); });
+
+    Promise.all([resolveLocation, minimumDelay]).then(([location]) => {
+      setSosHistory((previous) => previous.map((item) => item.reference === reference ? { ...item, location } : item));
       setScreen("sosOutcome");
       sosActivationLock.current = false;
-    }, 950);
+    });
   }
 
-  function previewSosFailure() {
-    setSosRequestFailed(true);
-    setDemoSosStatus("Request delivery failed in this local demo. No contact was reached.");
-    go("sosNotDelivered");
+  function acknowledgeSos(reference: string) {
+    setSosHistory((previous) => previous.map((item) => item.reference === reference ? { ...item, acknowledged: true } : item));
+  }
+
+  function cancelSosHold() {
+    if (sosHoldTimeoutRef.current !== null) {
+      window.clearTimeout(sosHoldTimeoutRef.current);
+      sosHoldTimeoutRef.current = null;
+    }
+    if (sosHoldFrameRef.current !== null) {
+      cancelAnimationFrame(sosHoldFrameRef.current);
+      sosHoldFrameRef.current = null;
+    }
+    setSosHoldProgress(0);
+  }
+
+  function startSosHold() {
+    if (sosHoldTimeoutRef.current !== null) return;
+    const startedAt = performance.now();
+    const tick = (now: number) => {
+      const elapsed = now - startedAt;
+      setSosHoldProgress(Math.min(1, elapsed / SOS_HOLD_DURATION));
+      if (elapsed < SOS_HOLD_DURATION) sosHoldFrameRef.current = requestAnimationFrame(tick);
+    };
+    sosHoldFrameRef.current = requestAnimationFrame(tick);
+    sosHoldTimeoutRef.current = window.setTimeout(() => {
+      sosHoldTimeoutRef.current = null;
+      if (sosHoldFrameRef.current !== null) {
+        cancelAnimationFrame(sosHoldFrameRef.current);
+        sosHoldFrameRef.current = null;
+      }
+      setSosHoldProgress(0);
+      activateSos();
+    }, SOS_HOLD_DURATION);
   }
 
   function acknowledgeAlert(alert: Alert) {
@@ -1086,14 +1131,14 @@ export default function ICEApp() {
 
   const title = screen === "settingsInfo" ? settingsInfo.title : screenTitles[screen];
   const isLoginScreen = ["signIn", "signInLoading", "firstLoginWelcome"].includes(screen);
-  const showNav = !["sosActivate", "sosConfirm", "sosSending", "sosOutcome", "sosSent", "sosCancelled", "sosUnavailable", "sosNotDelivered", "sosStatusUnavailable", "reportSubmitting", "signIn", "signInLoading", "firstLoginWelcome", "supplementSubmitting"].includes(screen);
+  const showNav = !["sosSending", "reportSubmitting", "signIn", "signInLoading", "firstLoginWelcome", "supplementSubmitting"].includes(screen);
 
   return (
     <main className="ice-stage flex min-h-[100dvh] items-center justify-center bg-[#e9ece9] p-0 sm:p-5">
       <div className="ice-phone relative flex h-[100dvh] min-h-[640px] w-full max-w-[390px] flex-col overflow-hidden bg-[#f8faf8] shadow-[0_24px_70px_rgba(25,42,31,0.15)] sm:h-[min(900px,calc(100dvh-2.5rem))] sm:min-h-[700px] sm:rounded-[36px] sm:border sm:border-[#dfe7e0]">
         {!isLoginScreen && <PhoneTopBar unreadCount={unreadCount} />}
         {title && !isLoginScreen && <ScreenHeader title={title} onBack={back} showBack={screen !== "profile"} />}
-        <div className={`ice-content min-h-0 flex-1 overflow-y-auto overscroll-contain ${isLoginScreen ? "" : "px-4 pb-4"}`}>
+        <div className={`ice-content min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${isLoginScreen ? "" : "px-4 pb-4"}`}>
           {screen === "signIn" && <MicrosoftSignInScreen onContinue={simulateSignIn} />}
           {screen === "signInLoading" && <LoadingScreen icon={<ShieldCheck />} title="Signing in to ICE" detail="Sign-in is a visual flow only. No account or credentials are being verified." />}
           {screen === "firstLoginWelcome" && <FirstLoginWelcomeScreen onContinue={completeFirstLoginWelcome} />}
@@ -1125,8 +1170,9 @@ export default function ICEApp() {
             report={selectedQuickReport}
             onAddDetails={() => startReport(selectedQuickReport.categoryId, selectedQuickReport)}
             onRetry={() => startQuickReport(selectedQuickReport.categoryId, selectedQuickReport.key)}
-            onHome={() => openTab("home")}
+            onHistory={() => go("quickReportHistory")}
           />}
+          {screen === "quickReportHistory" && selectedQuickReport && <QuickReportHistoryScreen report={selectedQuickReport} onBack={back} />}
           {screen === "reportDetails" && <ReportDetailsScreen draft={draft} errors={draftErrors} onChange={patchDraft} onChooseCategory={() => go("categories")} onBack={back} onNext={() => validateReportDetails() && go("reportLocation")} />}
           {screen === "reportLocation" && <LocationScreen draft={draft} errors={draftErrors} onChange={patchDraft} onNext={() => validateLocation() && go("reportEvidence")} onBack={back} />}
           {screen === "reportEvidence" && <EvidenceScreen draft={draft} onChange={patchDraft} onNext={() => go("reportReview")} />}
@@ -1151,15 +1197,11 @@ export default function ICEApp() {
           {screen === "supplementSubmitting" && <LoadingScreen icon={<Send />} title="Sending supplementary information" detail="Saving this update in the local demonstration." />}
           {screen === "supplementSuccess" && <SupplementarySuccessScreen report={selectedReport} onReport={() => { setScreenStack(["reports"]); setScreen("reportDetail"); setActiveTab("report"); }} />}
           {screen === "supplementFailure" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Information not sent" description="The update could not be saved. Your text is still available to retry." button="Try again" onClick={() => setScreen("supplementaryInformation")} secondaryAction={() => { setScreenStack(["reports"]); setScreen("reportDetail"); setActiveTab("report"); }} secondaryLabel="Back to report" />}
-          {screen === "sosActivate" && <SosActivationScreen contacts={contacts} hasLocation={sosHasLocation} onLocationChange={setSosHasLocation} onContinue={() => go("sosConfirm")} onContacts={() => go("contacts")} onCancel={() => openTab("home")} />}
-          {screen === "sosConfirm" && <SosConfirmScreen contacts={contacts} hasLocation={sosHasLocation} onConfirm={sendMockSos} onCancel={() => openTab("home")} />}
-          {screen === "sosSending" && sosEvent && <SosProcessingScreen event={sosEvent} />}
-          {screen === "sosOutcome" && sosEvent && <SosOutcomeScreen event={sosEvent} onStatus={() => go("sosSent")} onHome={() => openTab("home")} />}
-          {screen === "sosSent" && sosEvent && <SosSentScreen event={sosEvent} contacts={contacts} acknowledged={sosAcknowledged} status={demoSosStatus} onAcknowledge={() => { setSosAcknowledged(true); setDemoSosStatus("Primary contact acknowledgement simulated only; no notification was sent."); }} onSimulateNoAck={() => setDemoSosStatus("No acknowledgement has been received in this simulation. No escalation is configured.")} onFailure={previewSosFailure} onStatusUnavailable={() => go("sosStatusUnavailable")} onHome={() => openTab("home")} />}
-          {screen === "sosCancelled" && <OutcomeScreen icon={<X />} tone="gray" title="SOS cancelled" description="The demo request was cancelled before sending. No emergency contact was notified." button="Back to Home" onClick={() => openTab("home")} />}
-          {screen === "sosUnavailable" && <OutcomeScreen icon={<MapPin />} tone="amber" title="Location unavailable" description="Location is unavailable. You can continue the local activation flow without attaching location." button="Continue without location" onClick={() => { setSosHasLocation(false); replace("sosActivate"); }} secondaryAction={() => openTab("home")} secondaryLabel="Cancel" />}
-          {screen === "sosNotDelivered" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Request not delivered" description={`${demoSosStatus} You can retry this same event; it will keep its reference.`} button="Retry same request" onClick={() => replace("sosActivate")} secondaryAction={() => openTab("home")} secondaryLabel="Back to Home" />}
-          {screen === "sosStatusUnavailable" && <OutcomeScreen icon={<CircleHelp />} tone="gray" title="Status unavailable" description="The demo cannot retrieve a current contact acknowledgement status." button="Return to request" onClick={back} secondaryAction={() => openTab("home")} secondaryLabel="Back to Home" />}
+          {screen === "sosSending" && selectedSosEvent && <SosProcessingScreen event={selectedSosEvent} />}
+          {screen === "sosOutcome" && selectedSosEvent && <SosOutcomeScreen event={selectedSosEvent} onStatus={() => go("sosSent")} onHome={() => openTab("home")} />}
+          {screen === "sosSent" && selectedSosEvent && <SosSentScreen event={selectedSosEvent} contacts={contacts} onAcknowledge={() => acknowledgeSos(selectedSosEvent.reference)} onHome={() => openTab("home")} />}
+          {screen === "sosHistory" && <SosHistoryScreen history={sosHistory} onSelect={(event) => { setSelectedSosReference(event.reference); go("sosHistoryDetail"); }} />}
+          {screen === "sosHistoryDetail" && selectedSosEvent && <SosSentScreen event={selectedSosEvent} contacts={contacts} onAcknowledge={() => acknowledgeSos(selectedSosEvent.reference)} onHome={back} homeLabel="Back to history" />}
           {screen === "alerts" && <AlertsScreen alerts={alerts} onSelect={(alert) => { setSelectedAlertId(alert.id); go("alertDetail", "alerts"); }} onPreviewEmpty={() => go("alertsEmpty", "alerts")} onPreviewUnavailable={() => go("alertsUnavailable", "alerts")} />}
           {screen === "alertsEmpty" && <OutcomeScreen icon={<Bell />} tone="gray" title="No active alerts" description="There are no active alerts to display in this preview state." button="Back to alerts" onClick={back} />}
           {screen === "alertsUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Alerts unavailable" description="The alert list is unavailable in this preview state. Try again to return to the list." button="Retry alerts" onClick={back} />}
@@ -1187,10 +1229,12 @@ export default function ICEApp() {
           {screen === "profile" && <ProfileScreen
             profile={staffProfile}
             contactCount={contacts.length}
+            sosHistoryCount={sosHistory.length}
             saved={profileSaved}
             onDismissSaved={() => setProfileSaved(false)}
             onContacts={() => go("contacts")}
             onEdit={() => { setProfileSaved(false); go("editProfile"); }}
+            onSosHistory={() => go("sosHistory")}
             onSettings={() => go("settings")}
             onRestartSession={restartSession}
           />}
@@ -1209,7 +1253,8 @@ export default function ICEApp() {
           {screen === "contacts" && <ContactsScreen contacts={contacts} onAdd={() => editContact()} onEdit={editContact} onDelete={(id) => setContacts((previous) => previous.filter((contact) => contact.id !== id))} />}
           {screen === "contactEdit" && <ContactForm draft={contactDraft} error={contactError} editing={Boolean(editingContactId)} onChange={setContactDraft} onSave={saveContact} onCancel={back} />}
         </div>
-        {showNav && <BottomNav activeTab={activeTab} onChange={openTab} alertActionCount={alertsRequiringAcknowledgement} onSOS={openSos} />}
+        {showNav && <BottomNav activeTab={activeTab} onChange={openTab} alertActionCount={alertsRequiringAcknowledgement} holdProgress={sosHoldProgress} onHoldStart={startSosHold} onHoldEnd={cancelSosHold} />}
+        {sosHoldProgress > 0 && <SosHoldOverlay progress={sosHoldProgress} />}
         {quickCategoryChoiceId && (
           <QuickReportChoiceDialog
             category={categoryFor(quickCategoryChoiceId)}
@@ -1237,7 +1282,51 @@ function PhoneTopBar({ unreadCount }: { unreadCount: number }) {
   );
 }
 
-function BottomNav({ activeTab, onChange, alertActionCount, onSOS }: { activeTab: Tab; onChange: (tab: Tab) => void; alertActionCount: number; onSOS: () => void }) {
+const SOS_HOLD_DURATION = 2000;
+const SOS_RING_CIRCUMFERENCE = 2 * Math.PI * 33;
+const SOS_OVERLAY_RING_CIRCUMFERENCE = 2 * Math.PI * 54;
+
+function SosHoldOverlay({ progress }: { progress: number }) {
+  const remainingSeconds = Math.max(1, Math.ceil((SOS_HOLD_DURATION * (1 - progress)) / 1000));
+  return (
+    <div className="pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-[#0b1f16]/40 px-6 text-center">
+      <div aria-hidden="true" className="relative flex h-32 w-32 items-center justify-center">
+        <svg viewBox="0 0 120 120" className="absolute h-32 w-32 -rotate-90">
+          <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="8" />
+          <circle
+            cx="60" cy="60" r="54" fill="none" stroke="#ffffff" strokeWidth="8" strokeLinecap="round"
+            strokeDasharray={SOS_OVERLAY_RING_CIRCUMFERENCE}
+            strokeDashoffset={SOS_OVERLAY_RING_CIRCUMFERENCE * (1 - progress)}
+          />
+        </svg>
+        <span className="text-5xl font-bold text-white">{remainingSeconds}</span>
+      </div>
+      <div aria-hidden="true">
+        <p className="text-sm font-semibold text-white">Keep holding to send SOS</p>
+        <p className="mt-1 text-xs text-white/80">Release to cancel</p>
+      </div>
+      <p role="status" aria-live="assertive" className="sr-only">Holding SOS button. {remainingSeconds} second{remainingSeconds === 1 ? "" : "s"} remaining.</p>
+    </div>
+  );
+}
+
+function BottomNav({
+  activeTab,
+  onChange,
+  alertActionCount,
+  holdProgress,
+  onHoldStart,
+  onHoldEnd,
+}: {
+  activeTab: Tab;
+  onChange: (tab: Tab) => void;
+  alertActionCount: number;
+  holdProgress: number;
+  onHoldStart: () => void;
+  onHoldEnd: () => void;
+}) {
+  const holding = holdProgress > 0;
+
   return (
     <nav aria-label="Main navigation" className="relative z-20 h-[calc(104px+env(safe-area-inset-bottom))] w-full shrink-0">
       <svg aria-hidden="true" viewBox="0 0 390 104" preserveAspectRatio="none" className="absolute inset-x-0 top-0 h-[104px] w-full" style={{ filter: "drop-shadow(0 -3px 7px rgba(27, 49, 36, 0.10))" }}>
@@ -1268,9 +1357,31 @@ function BottomNav({ activeTab, onChange, alertActionCount, onSOS }: { activeTab
         })}
       </div>
       <div className="sos-halo pointer-events-none !absolute !left-1/2 !top-[-10px] !z-20 !w-[104px] -translate-x-1/2">
-        <button onClick={onSOS} aria-label="SOS, activate personal emergency alert" className="sos-action pointer-events-auto relative z-10 flex !w-[66px] flex-col items-center justify-center gap-0.5 rounded-full bg-[#df2929] text-white shadow-[0_3px_10px_rgba(155,32,32,0.2)] transition-transform active:scale-[0.97]">
-          <Siren className="h-6 w-6 stroke-[1.8]" /><span className="text-[11px] font-semibold leading-none tracking-wide">SOS</span>
-        </button>
+        <div className="relative flex items-center justify-center">
+          <svg aria-hidden="true" viewBox="0 0 72 72" className={`pointer-events-none absolute h-[76px] w-[76px] -rotate-90 ${holding ? "" : "opacity-0"}`}>
+            <circle cx="36" cy="36" r="33" fill="none" stroke="#ffffff" strokeOpacity="0.55" strokeWidth="4" />
+            <circle
+              cx="36" cy="36" r="33" fill="none" stroke="#ffffff" strokeWidth="4" strokeLinecap="round"
+              strokeDasharray={SOS_RING_CIRCUMFERENCE}
+              strokeDashoffset={SOS_RING_CIRCUMFERENCE * (1 - holdProgress)}
+            />
+          </svg>
+          <button
+            onPointerDown={onHoldStart}
+            onPointerUp={onHoldEnd}
+            onPointerLeave={onHoldEnd}
+            onPointerCancel={onHoldEnd}
+            onContextMenu={(event) => event.preventDefault()}
+            onKeyDown={(event) => { if ((event.key === " " || event.key === "Enter") && !event.repeat) { event.preventDefault(); onHoldStart(); } }}
+            onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") onHoldEnd(); }}
+            aria-label="SOS. Press and hold for 2 seconds to send a personal emergency alert."
+            style={{ touchAction: "none" }}
+            className="sos-action pointer-events-auto relative z-10 flex !w-[66px] select-none flex-col items-center justify-center gap-0.5 rounded-full bg-[#df2929] text-white shadow-[0_3px_10px_rgba(155,32,32,0.2)] transition-transform active:scale-[0.97]"
+          >
+            <Siren className="h-6 w-6 stroke-[1.8]" />
+            <span className="text-[11px] font-semibold leading-none tracking-wide">{holding ? "Hold…" : "SOS"}</span>
+          </button>
+        </div>
       </div>
     </nav>
   );
@@ -1606,12 +1717,11 @@ function QuickReportDetailsScreen({
   );
 }
 
-function QuickReportStatusScreen({ report, onAddDetails, onRetry, onHome }: { report: QuickReport; onAddDetails: () => void; onRetry: () => void; onHome: () => void }) {
+function QuickReportStatusScreen({ report, onAddDetails, onRetry, onHistory }: { report: QuickReport; onAddDetails: () => void; onRetry: () => void; onHistory: () => void }) {
   const category = categoryFor(report.categoryId);
   const Icon = category.icon;
   const isFailed = report.sendStatus === "failed";
   const isSending = report.sendStatus === "sending";
-  const timeline = report.timeline ?? [];
   return (
     <div className="space-y-3 py-4">
       <Panel className={`flex items-start gap-3 ${isFailed ? "bg-[#fff6f4]" : "bg-[#f0f8f0]"}`}>
@@ -1635,31 +1745,48 @@ function QuickReportStatusScreen({ report, onAddDetails, onRetry, onHome }: { re
         <DetailRow icon={<FileText />} label="Details" value={report.detailStatus === "completed" ? report.summary : "Not added yet"} />
         <StatusPill tone={isFailed ? "red" : isSending ? "amber" : "green"}>{isFailed ? "Not sent" : isSending ? "Sending" : report.detailStatus === "completed" ? "Details added" : "Quick report sent"}</StatusPill>
       </Panel>
-      <section aria-label="Quick report status timeline">
-        <h2 className="mb-3 text-sm font-semibold text-[#26372c]">Status timeline</h2>
-        {timeline.length > 0 ? timeline.map((event, index) => {
-          const failed = event.status === "failed";
-          const pending = event.status === "in_progress";
-          const EventIcon = failed ? AlertTriangle : pending ? LoaderCircle : Check;
-          return (
-            <div key={event.id} className="relative flex gap-3 pb-3 last:pb-0">
-              {index < timeline.length - 1 && <span className={`absolute left-[9px] top-5 h-full w-px ${failed ? "bg-[#f0c5c1]" : "bg-[#cde3d2]"}`} aria-hidden="true" />}
-              <span className={`relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${failed ? "bg-[#b42318] text-white" : pending ? "border-2 border-[#087443] bg-white text-[#087443]" : "bg-[#087443] text-white"}`}>
-                <EventIcon className={`h-3 w-3 ${pending ? "animate-spin" : ""}`} />
-              </span>
-              <div className="min-w-0 flex-1 rounded-xl border border-[#e1e8e2] bg-white p-3">
-                <p className="text-xs font-semibold text-[#26372c]">{event.title}</p>
-                <p className="mt-1 text-xs leading-4 text-[#66736b]">{event.description}</p>
-                <p className="mt-2 text-[10px] text-[#718078]">{formatNotificationTime(event.createdAt)}</p>
-              </div>
-            </div>
-          );
-        }) : <p className="rounded-xl border border-[#e1e8e2] bg-white p-3 text-xs leading-5 text-[#66736b]">No tracking events yet.</p>}
-        <p className="mt-3 text-[10px] leading-4 text-[#829087]">Timeline events reflect this local demo only; no live responder or processing updates are connected.</p>
+      <Button onClick={onHistory} className="w-full">View timeline <ChevronRight className="h-4 w-4" /></Button>
+      {isFailed && <Button onClick={onRetry} variant="secondary" className="w-full">Retry same quick report</Button>}
+      {!isFailed && report.detailStatus !== "completed" && <Button onClick={onAddDetails} variant="secondary" className="w-full">Add details</Button>}
+    </div>
+  );
+}
+
+function QuickReportHistoryScreen({ report, onBack }: { report: QuickReport; onBack: () => void }) {
+  const category = categoryFor(report.categoryId);
+  const Icon = category.icon;
+  const isFailed = report.sendStatus === "failed";
+  const isSending = report.sendStatus === "sending";
+  const statusLabel = isFailed ? "Not sent" : isSending ? "Sending" : report.detailStatus === "completed" ? "Details added" : "Quick report sent";
+  const stages = ["Submitted", "Received", "Under Review", "Assigned", "In Progress", "Resolved"] as const;
+  const history = report.sendStatus === "sent"
+    ? [`Submitted · ${new Date(report.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`]
+    : [];
+  const completedStages = new Set(history
+    .map((event) => stages.find((stage) => event.toLowerCase().startsWith(stage.toLowerCase())))
+    .filter((stage): stage is typeof stages[number] => Boolean(stage)));
+  return (
+    <div className="space-y-4 py-3">
+      <section className="flex items-start gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3">
+        <Icon className="mt-0.5 h-5 w-5 shrink-0" style={{ color: category.color }} />
+        <div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold text-[#18231d]">{report.summary || `${report.category} quick report`}</p><p className="mt-1 break-all text-xs text-[#66736b]">{report.reference || "Not assigned"}</p><div className="mt-2"><StatusPill tone={isFailed ? "red" : isSending ? "amber" : "green"}>{statusLabel}</StatusPill></div></div>
       </section>
-      {isFailed && <Button onClick={onRetry} className="w-full">Retry same quick report</Button>}
-      {!isFailed && report.detailStatus !== "completed" && <Button onClick={onAddDetails} className="w-full">Add details</Button>}
-      <Button onClick={onHome} variant="quiet" className="w-full">Back to Home</Button>
+      <section aria-label="Quick report status timeline">
+        {stages.map((stage, index) => {
+          const isComplete = completedStages.has(stage);
+          const event = history.find((item) => item.toLowerCase().startsWith(stage.toLowerCase()));
+          return <div key={stage} className="relative flex gap-3 pb-5 last:pb-0">
+            {index < stages.length - 1 && <span className={`absolute left-[9px] top-5 h-full w-px ${isComplete ? "bg-[#087443]" : "bg-[#dfe7e0]"}`} aria-hidden="true" />}
+            <span className={`relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${isComplete ? "bg-[#087443] text-white" : "border-2 border-[#cbd5ce] bg-white text-[#718078]"}`}>{isComplete ? <Check className="h-3 w-3" /> : null}</span>
+            <div className="min-w-0 flex-1 rounded-xl border border-[#e1e8e2] bg-white p-3">
+              <p className="text-xs font-semibold text-[#26372c]">{stage}</p>
+              <p className="mt-1 text-xs text-[#66736b]">{event ? event.split("·").slice(1).join("·").trim() || "Confirmed" : "Not started"}</p>
+            </div>
+          </div>;
+        })}
+      </section>
+      <p className="text-xs leading-5 text-[#66736b]">Only confirmed status updates appear here. Stages without a confirmed update remain not started.</p>
+      <Button variant="quiet" onClick={onBack} className="w-full">Back to report</Button>
     </div>
   );
 }
@@ -2414,97 +2541,9 @@ function FeedDetailScreen({ item }: { item: FeedItem }) {
   );
 }
 
-function SosActivationScreen({
-  contacts,
-  hasLocation,
-  onLocationChange,
-  onContinue,
-  onContacts,
-  onCancel,
-}: {
-  contacts: EmergencyContact[];
-  hasLocation: boolean;
-  onLocationChange: (value: boolean) => void;
-  onContinue: () => void;
-  onContacts: () => void;
-  onCancel: () => void;
-}) {
-  const orderedContacts = ["Primary", "Secondary", "Tertiary"].flatMap((priority) => (
-    contacts.filter((contact) => contact.priority === priority)
-  ));
-  return (
-    <div className="space-y-4 py-3">
-      <section className="flex flex-col items-center rounded-2xl bg-[#fff7f6] px-4 py-4 text-center">
-        <div className="sos-halo !w-[112px]">
-          <div className="sos-action relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full bg-[#df2929] text-white shadow-sm">
-            <Siren className="h-6 w-6 stroke-[1.8]" /><span className="text-xs font-semibold">SOS</span>
-          </div>
-        </div>
-        <h2 className="mt-3 text-lg font-semibold text-[#203127]">Personal Emergency Alert</h2>
-        <p className="mt-1 max-w-[280px] text-xs leading-5 text-[#68756c]">Use this if you need urgent assistance. Your configured contacts may be notified when an alert is activated.</p>
-      </section>
-      <Panel className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold text-[#26372c]">Event location</p>
-          <span className={`flex items-center gap-1.5 text-[10px] font-medium ${hasLocation ? "text-[#087443]" : "text-[#98610a]"}`}><MapPin className="h-3.5 w-3.5" />{hasLocation ? "Demo location available" : "Unavailable"}</span>
-        </div>
-        <p className="text-[10px] leading-4 text-[#6a786f]">{hasLocation ? "A labelled demo location may be included. Device GPS is not accessed." : "Location is unavailable; activation can continue without it."}</p>
-        <button onClick={() => onLocationChange(!hasLocation)} className="min-h-11 rounded-lg text-left text-[11px] font-semibold text-[#087443] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">{hasLocation ? "Preview unavailable location" : "Use demo location"}</button>
-      </Panel>
-      <Panel className="space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold text-[#26372c]">Emergency contacts</p>
-          <button onClick={onContacts} className="min-h-11 px-2 text-[11px] font-semibold text-[#087443] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">Manage</button>
-        </div>
-        {orderedContacts.length > 0 ? orderedContacts.map((contact) => (
-          <div key={contact.id} className="flex items-center gap-3 border-t border-[#edf1ed] pt-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#edf5ef] text-[#087443]"><UserRound className="h-4 w-4" /></span>
-            <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-[#26372c]">{contact.name}</span><span className="block text-[10px] text-[#758178]">{contact.priority}{contact.priority === "Tertiary" ? " · optional" : ""}</span></span>
-          </div>
-        )) : <p className="rounded-lg bg-[#f5f7f5] p-3 text-[11px] leading-4 text-[#66736b]">No emergency contacts are configured. Manage contacts before relying on notifications.</p>}
-        <p className="border-t border-[#e5ebe6] pt-2.5 text-[10px] leading-4 text-[#6a786f]">Location is included only when available and permitted. This preview does not send contact notifications.</p>
-      </Panel>
-      <Button onClick={onContinue} className="w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">Continue to activate<ChevronRight className="h-4 w-4" /></Button>
-      <Button variant="secondary" onClick={onCancel} className="w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">Cancel</Button>
-    </div>
-  );
-}
-
-function SosConfirmScreen({
-  contacts,
-  hasLocation,
-  onConfirm,
-  onCancel,
-}: {
-  contacts: EmergencyContact[];
-  hasLocation: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const primary = contacts.find((contact) => contact.priority === "Primary");
-  return (
-    <div className="space-y-4 py-4">
-      <section className="flex flex-col items-center rounded-2xl bg-[#fff7f6] px-4 py-5 text-center">
-        <div className="sos-halo !w-[128px]">
-          <div className="sos-action relative z-10 flex flex-col items-center justify-center rounded-full bg-[#df2929] text-white shadow-sm">
-            <Siren className="h-8 w-8 stroke-[1.8]" />
-          </div>
-        </div>
-        <h2 className="mt-4 text-lg font-semibold text-[#203127]">Confirm SOS activation</h2>
-        <p className="mt-2 max-w-[280px] text-xs leading-5 text-[#68756c]">Confirm only if you need urgent assistance. This action records an SOS request.</p>
-      </section>
-      <Panel className="space-y-3">
-        <div className="flex items-start gap-3"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p className="text-xs leading-5 text-[#35463c]">Event location: {hasLocation ? "labelled demo location, not device GPS" : "unavailable; request can continue without it"}.</p></div>
-        <div className="flex items-start gap-3"><UserRound className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p className="text-xs leading-5 text-[#35463c]">Primary contact: {primary?.name ?? "not configured"}.</p></div>
-        <p className="border-t border-[#e5ebe6] pt-3 text-[10px] leading-4 text-[#6a786f]">This local preview records the request only. No contact notification or emergency-service dispatch is made.</p>
-      </Panel>
-      <Button variant="danger" onClick={onConfirm} className="w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]"><Siren className="h-4 w-4" />Confirm activation</Button>
-      <Button variant="secondary" onClick={onCancel} className="w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">Cancel</Button>
-    </div>
-  );
-}
 
 function SosProcessingScreen({ event }: { event: SosEvent }) {
+  const locationReady = event.location.startsWith("Lat ");
   return (
     <div className="space-y-5 py-5">
       <section className="flex flex-col items-center rounded-2xl bg-[#f3f8f4] px-4 py-5 text-center">
@@ -2515,7 +2554,7 @@ function SosProcessingScreen({ event }: { event: SosEvent }) {
       <Panel className="space-y-4">
         <p className="text-xs font-semibold text-[#26372c]">Activation progress</p>
         <ContactStatus name="Local SOS event" status={`Recorded · ${event.reference}`} done />
-        <ContactStatus name="Event location" status={event.location} done={event.location !== "Unavailable"} />
+        <ContactStatus name="Event location" status={event.location} done={locationReady} />
         <ContactStatus name="Contact notification" status="Not sent in this local preview" done={false} />
       </Panel>
       <p role="status" className="rounded-xl bg-[#edf5ef] p-3 text-center text-[11px] leading-5 text-[#526158]">Keep this screen available while the local activation result is prepared. No contact notification is being sent.</p>
@@ -2538,7 +2577,7 @@ function SosOutcomeScreen({ event, onStatus, onHome }: { event: SosEvent; onStat
         <DetailRow icon={<MapPin />} label="Event location" value={event.location} />
         <p className="rounded-lg bg-[#f5f7f5] p-2.5 text-[11px] leading-4 text-[#526158]">Contact notification: not sent in this preview.</p>
       </Panel>
-      <Button onClick={onStatus} className="w-full">View contact status<ChevronRight className="h-4 w-4" /></Button>
+      <Button onClick={onStatus} className="w-full">View SOS status<ChevronRight className="h-4 w-4" /></Button>
       <Button onClick={onHome} variant="secondary" className="w-full">Return to Home</Button>
     </div>
   );
@@ -2547,26 +2586,26 @@ function SosOutcomeScreen({ event, onStatus, onHome }: { event: SosEvent; onStat
 function SosSentScreen({
   event,
   contacts,
-  acknowledged,
-  status,
   onAcknowledge,
-  onSimulateNoAck,
-  onFailure,
-  onStatusUnavailable,
   onHome,
+  homeLabel = "Back to Home",
 }: {
   event: SosEvent;
   contacts: EmergencyContact[];
-  acknowledged: boolean;
-  status: string;
   onAcknowledge: () => void;
-  onSimulateNoAck: () => void;
-  onFailure: () => void;
-  onStatusUnavailable: () => void;
   onHome: () => void;
+  homeLabel?: string;
 }) {
+  const acknowledged = event.acknowledged;
   const primary = contacts.find((contact) => contact.priority === "Primary");
   const secondary = contacts.find((contact) => contact.priority === "Secondary");
+
+  useEffect(() => {
+    if (acknowledged) return;
+    const timer = window.setTimeout(onAcknowledge, 4000);
+    return () => window.clearTimeout(timer);
+  }, [acknowledged, onAcknowledge]);
+
   return (
     <div className="space-y-4 py-6">
       <div className="flex flex-col items-center text-center">
@@ -2579,13 +2618,43 @@ function SosSentScreen({
         <DetailRow icon={<FileText />} label="Local reference" value={event.reference} />
         <DetailRow icon={<CalendarDays />} label="Recorded" value={new Date(event.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
         <DetailRow icon={<MapPin />} label="Event location" value={event.location} />
-        <ContactStatus name={primary?.name ?? "Primary contact not set"} status={primary ? acknowledged ? "Acknowledgement simulated; notification not sent" : "Not notified; no backend is connected" : "No primary contact configured"} done={acknowledged} />
-        {secondary && <ContactStatus name={secondary.name} status={status.includes("No acknowledgement") ? "Escalation is not configured" : "Not notified"} done={false} />}
+        <ContactStatus
+          name={primary?.name ?? "Primary contact not set"}
+          status={primary ? acknowledged ? "Acknowledged" : "Awaiting acknowledgement…" : "No primary contact configured"}
+          done={acknowledged}
+        />
+        {secondary && <ContactStatus name={secondary.name} status="Not notified" done={false} />}
         <p className="border-t border-[#e5ebe6] pt-3 text-[10px] leading-4 text-[#6a786f]">No emergency services have been contacted. No assistance dispatch is claimed.</p>
       </Panel>
-      {!acknowledged && <div className="space-y-2"><Button onClick={onAcknowledge} className="w-full">Simulate primary acknowledgement</Button><Button onClick={onSimulateNoAck} variant="secondary" className="w-full">Preview no-acknowledgement status</Button></div>}
-      <div className="grid grid-cols-2 gap-2"><button onClick={onFailure} className="rounded-lg border border-[#e1e8e2] p-2 text-[10px] text-[#58665d]">Preview not delivered</button><button onClick={onStatusUnavailable} className="rounded-lg border border-[#e1e8e2] p-2 text-[10px] text-[#58665d]">Preview status unavailable</button></div>
-      <Button onClick={onHome} variant="secondary" className="w-full">Back to Home</Button>
+      <Button onClick={onHome} variant="secondary" className="w-full">{homeLabel}</Button>
+    </div>
+  );
+}
+
+function SosHistoryScreen({ history, onSelect }: { history: SosEvent[]; onSelect: (event: SosEvent) => void }) {
+  return (
+    <div className="space-y-3 py-3">
+      <div><h2 className="text-sm font-semibold text-[#18231d]">SOS history</h2><p className="mt-1 text-xs text-[#66736b]">Personal emergency alerts sent from this device.</p></div>
+      {history.length ? (
+        <section aria-label="SOS requests" className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
+          {history.map((event, index) => (
+            <button key={event.reference} onClick={() => onSelect(event)} className={`flex min-h-[76px] w-full items-center gap-3 p-3 text-left hover:bg-[#f8faf8] focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#087443] ${index ? "border-t border-[#edf1ed]" : ""}`}>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fff0ed] text-[#c53124]"><Siren className="h-4 w-4" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><StatusPill tone={event.acknowledged ? "green" : "amber"}>{event.acknowledged ? "Acknowledged" : "Awaiting acknowledgement"}</StatusPill></span>
+                <span className="mt-1 block break-all text-[13px] font-semibold text-[#18231d]">{event.reference}</span>
+                <span className="mt-0.5 block break-words text-[11px] text-[#66736b]">{new Date(event.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} · {event.location}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-[#819087]" />
+            </button>
+          ))}
+        </section>
+      ) : <div className="rounded-2xl border border-dashed border-[#dfe7e0] px-4 py-8 text-center">
+        <Siren className="mx-auto h-7 w-7 text-[#829087]" />
+        <p className="mt-3 text-sm font-semibold text-[#35463c]">No SOS requests yet</p>
+        <p className="mt-1 text-xs text-[#718078]">Personal emergency alerts you send will appear here.</p>
+      </div>}
+      <p className="text-center text-[11px] text-[#829087]">SOS history is held in this app session only.</p>
     </div>
   );
 }
@@ -2628,19 +2697,23 @@ function OutcomeScreen({
 function ProfileScreen({
   profile,
   contactCount,
+  sosHistoryCount,
   saved,
   onDismissSaved,
   onContacts,
   onEdit,
+  onSosHistory,
   onSettings,
   onRestartSession,
 }: {
   profile: StaffProfile;
   contactCount: number;
+  sosHistoryCount: number;
   saved: boolean;
   onDismissSaved: () => void;
   onContacts: () => void;
   onEdit: () => void;
+  onSosHistory: () => void;
   onSettings: () => void;
   onRestartSession: () => void;
 }) {
@@ -2674,6 +2747,7 @@ function ProfileScreen({
       <section aria-label="Profile actions" className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
         <ProfileAction icon={ContactRound} title="Emergency contacts" description={contactCount > 0 ? `${contactCount} contacts on file` : "Complete your emergency contacts"} onClick={onContacts} />
         <ProfileAction icon={Pencil} title="Edit profile" description="Update personal contact details" onClick={onEdit} />
+        <ProfileAction icon={Siren} title="SOS history" description={sosHistoryCount > 0 ? `${sosHistoryCount} request${sosHistoryCount === 1 ? "" : "s"} sent` : "No SOS requests yet"} onClick={onSosHistory} />
         <ProfileAction icon={Settings} title="Settings" description="Preferences, permissions and app information" onClick={onSettings} last />
       </section>
       <button onClick={onRestartSession} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#eff7e9] px-4 py-2.5 text-sm font-semibold text-[#087443] hover:bg-[#e7f2df] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">
@@ -2796,11 +2870,10 @@ function EditProfileScreen({
   return (
     <form onSubmit={submit} className="space-y-3 py-3">
       <section className="flex items-center gap-4 rounded-2xl border border-[#e1e8e2] bg-white p-3.5">
-        <div className="relative shrink-0">
+        <div className="shrink-0">
           {profilePhoto
             ? <Image unoptimized src={profilePhoto} alt={`${profile.fullName} profile`} width={88} height={88} className="h-[88px] w-[88px] rounded-full object-cover" />
             : <span className="flex h-[88px] w-[88px] items-center justify-center rounded-full bg-[#e8edf1] text-xl font-semibold text-[#087443]">{initials || <UserRound className="h-7 w-7" />}</span>}
-          <span className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#087443] text-white"><Camera className="h-4 w-4" /></span>
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-[#19342f]">Profile photo</h2>
