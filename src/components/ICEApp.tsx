@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Bell,
   BellRing,
+  Building2,
   CalendarDays,
   Camera,
   Car,
@@ -14,6 +15,8 @@ import {
   CircleHelp,
   ClipboardList,
   ContactRound,
+  Dna,
+  Droplet,
   ExternalLink,
   FileText,
   Flame,
@@ -22,13 +25,22 @@ import {
   Home,
   Images,
   Info,
+  LockKeyhole,
   LocateFixed,
   LoaderCircle,
   MapPin,
+  Mail,
   Newspaper,
+  Pencil,
   Phone,
   Plus,
   Radio,
+  RotateCcw,
+  Search,
+  Settings,
+  Send,
+  ShieldAlert,
+  Smartphone,
   ShieldCheck,
   Siren,
   Stethoscope,
@@ -40,9 +52,8 @@ import {
 import Image from "next/image";
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-type Tab = "home" | "alerts" | "report" | "feed" | "profile";
+type Tab = "home" | "alerts" | "notifications" | "report" | "profile";
 type Screen =
-  | "loginWelcome"
   | "home"
   | "categories"
   | "quickCategories"
@@ -60,8 +71,14 @@ type Screen =
   | "reportsUnavailable"
   | "reportDetail"
   | "reportHistory"
+  | "supplementaryInformation"
+  | "supplementSubmitting"
+  | "supplementSuccess"
+  | "supplementFailure"
   | "sosActivate"
+  | "sosConfirm"
   | "sosSending"
+  | "sosOutcome"
   | "sosSent"
   | "sosCancelled"
   | "sosUnavailable"
@@ -81,6 +98,11 @@ type Screen =
   | "feedUnavailable"
   | "feedDetail"
   | "profile"
+  | "editProfile"
+  | "settings"
+  | "notificationSettings"
+  | "permissions"
+  | "settingsInfo"
   | "contacts"
   | "contactEdit"
   | "signIn"
@@ -112,6 +134,7 @@ type ReportEvidence = {
 
 type Report = {
   id: string;
+  createdAt: string;
   category: string;
   summary: string;
   description: string;
@@ -120,6 +143,11 @@ type Report = {
   status: "Submitted" | "In progress" | "Resolved";
   history: string[];
   evidence: string[];
+  supplementaryInformation: { id: string; text: string; createdAt: string }[];
+};
+
+type ReportListEntry = Pick<Report, "id" | "createdAt" | "category" | "summary" | "location" | "dateTime" | "status"> & {
+  quickReportKey?: string;
 };
 
 type QuickReport = {
@@ -140,12 +168,27 @@ type QuickReport = {
 
 type Alert = {
   id: string;
+  reference: string;
   title: string;
   description: string;
+  category: "Safety" | "Access" | "Security";
   priority: "Critical" | "Advisory" | "Informational";
   time: string;
+  source: string;
+  affectedArea: string;
+  classification: "Internal Only" | "Restricted" | "Shareable";
   requiresAcknowledgement: boolean;
   acknowledged: boolean;
+  acknowledgedAt?: string;
+};
+
+type NotificationItem = {
+  id: string;
+  category: "System" | "Account" | "Reports";
+  title: string;
+  summary: string;
+  createdAt: string;
+  relatedReportId?: string;
 };
 
 type FeedItem = {
@@ -165,11 +208,54 @@ type EmergencyContact = {
   priority: "Primary" | "Secondary" | "Tertiary";
 };
 
+type SosEvent = {
+  reference: string;
+  createdAt: string;
+  location: string;
+};
+
+type StaffProfile = {
+  fullName: string;
+  employeeId: string;
+  department: string;
+  role: string;
+  organizationEmail: string;
+  phone: string;
+  personalEmail: string;
+  bloodGroup: string;
+  genotype: string;
+  gender: string;
+  dateOfBirth: string;
+  emergencyMedicalNotes: string;
+  profilePhoto?: string;
+};
+
+type NotificationPreferences = {
+  incidentUpdates: boolean;
+  safetyInformation: boolean;
+};
+
+type PushPermission = "checking" | "granted" | "denied" | "default" | "unavailable";
+
+const initialStaffProfile: StaffProfile = {
+  fullName: "Mike Kanu",
+  employeeId: "NSIA-OP-0145",
+  department: "Operations",
+  role: "Operations Officer",
+  organizationEmail: "mike.kanu@nsia.example",
+  phone: "+234 805 550 0145",
+  personalEmail: "mike.kanu@gmail.com",
+  bloodGroup: "",
+  genotype: "",
+  gender: "",
+  dateOfBirth: "",
+  emergencyMedicalNotes: "",
+};
+
 const tabs: { id: Tab; label: string; icon: typeof Home }[] = [
   { id: "home", label: "Home", icon: Home },
-  { id: "alerts", label: "Alerts", icon: Bell },
-  { id: "report", label: "Report", icon: ClipboardList },
-  { id: "feed", label: "Feed", icon: Radio },
+  { id: "alerts", label: "Alerts", icon: ShieldAlert },
+  { id: "report", label: "Reports", icon: ClipboardList },
   { id: "profile", label: "Profile", icon: UserRound },
 ];
 
@@ -185,30 +271,62 @@ const categories: IncidentCategory[] = [
 const initialAlerts: Alert[] = [
   {
     id: "alert-flood",
+    reference: "ALT-2026-0001",
     title: "Heavy flooding reported nearby",
     description: "Riverside access road affected. Use the west entrance and follow Security guidance.",
+    category: "Safety",
     priority: "Critical",
     time: "Today, 09:31",
+    source: "NSIA Security",
+    affectedArea: "Riverside access road",
+    classification: "Internal Only",
     requiresAcknowledgement: true,
     acknowledged: false,
   },
   {
     id: "alert-road",
+    reference: "ALT-2026-0002",
     title: "Restricted access to east lobby",
     description: "Maintenance activity is affecting access to the east lobby. Please use the main entrance.",
+    category: "Access",
     priority: "Advisory",
     time: "Today, 08:15",
+    source: "NSIA Facilities",
+    affectedArea: "East lobby",
+    classification: "Internal Only",
     requiresAcknowledgement: false,
     acknowledged: false,
   },
   {
     id: "alert-update",
+    reference: "ALT-2026-0003",
     title: "Routine security update",
     description: "A routine security update for staff. No action is required.",
+    category: "Security",
     priority: "Informational",
     time: "Yesterday, 16:20",
+    source: "NSIA Security",
+    affectedArea: "All locations",
+    classification: "Restricted",
     requiresAcknowledgement: false,
     acknowledged: false,
+  },
+];
+
+const initialSystemNotifications: NotificationItem[] = [
+  {
+    id: "note-system-maintenance",
+    category: "System",
+    title: "Scheduled system maintenance",
+    summary: "Some app services may be temporarily unavailable during scheduled maintenance.",
+    createdAt: "2026-10-12T06:45:00.000Z",
+  },
+  {
+    id: "note-account-security",
+    category: "Account",
+    title: "Account security reminder",
+    summary: "Keep your organization sign-in details private and report unexpected access prompts.",
+    createdAt: "2026-10-11T11:10:00.000Z",
   },
 ];
 
@@ -247,42 +365,6 @@ const initialFeed: FeedItem[] = [
   },
 ];
 
-const initialReports: Report[] = [
-  {
-    id: "INC-2026-000145",
-    category: "Medical",
-    summary: "Medical Emergency",
-    description: "Assistance requested in the east lobby.",
-    location: "East lobby, Abuja HQ",
-    dateTime: "05 Oct 2026, 09:41",
-    status: "Submitted",
-    history: ["Submitted · 05 Oct 2026, 09:41"],
-    evidence: [],
-  },
-  {
-    id: "INC-2026-000132",
-    category: "Security",
-    summary: "Security concern",
-    description: "Strange activity noticed near the west gate.",
-    location: "West gate, Abuja HQ",
-    dateTime: "03 Oct 2026, 14:20",
-    status: "In progress",
-    history: ["Submitted · 03 Oct 2026, 14:20", "In progress · 03 Oct 2026, 14:26"],
-    evidence: [],
-  },
-  {
-    id: "INC-2026-000121",
-    category: "Accident",
-    summary: "Minor vehicle incident",
-    description: "A minor vehicle incident was reported in the car park.",
-    location: "Abuja HQ car park",
-    dateTime: "28 Sep 2026, 11:15",
-    status: "Resolved",
-    history: ["Submitted · 28 Sep 2026, 11:15", "Resolved · 28 Sep 2026, 11:38"],
-    evidence: [],
-  },
-];
-
 const initialContacts: EmergencyContact[] = [
   { id: "contact-1", name: "Amina Yusuf", relationship: "Primary contact", phone: "+234 801 234 5678", priority: "Primary" },
   { id: "contact-2", name: "Chidi Okafor", relationship: "Secondary contact", phone: "+234 802 345 6789", priority: "Secondary" },
@@ -310,14 +392,19 @@ const screenTitles: Partial<Record<Screen, string>> = {
   reportSubmitting: "Submitting report",
   reportSuccess: "Report submitted",
   reportFailure: "Submission unavailable",
-  reports: "My reports",
-  reportsEmpty: "My reports",
-  reportsUnavailable: "My reports",
+  reports: "My Reports",
+  reportsUnavailable: "My Reports",
   reportDetail: "Report details",
   reportHistory: "Status history",
-  sosActivate: "Personal emergency alert",
-  sosSending: "Sending request",
-  sosSent: "Request preview",
+  supplementaryInformation: "Supplementary information",
+  supplementSubmitting: "Sending information",
+  supplementSuccess: "Information added",
+  supplementFailure: "Submission unavailable",
+  sosActivate: "Personal Emergency Alert",
+  sosConfirm: "Confirm SOS activation",
+  sosSending: "Processing alert",
+  sosOutcome: "SOS request activated",
+  sosSent: "SOS contact status",
   sosCancelled: "Request cancelled",
   sosUnavailable: "Location unavailable",
   sosNotDelivered: "Request not delivered",
@@ -326,7 +413,7 @@ const screenTitles: Partial<Record<Screen, string>> = {
   alertsEmpty: "Alerts",
   alertsUnavailable: "Alerts",
   alertDetail: "Alert details",
-  alertAcknowledged: "Acknowledgement saved",
+  alertAcknowledged: "Alert acknowledged",
   notifications: "Notifications",
   notificationsEmpty: "Notifications",
   notificationsUnavailable: "Notifications",
@@ -336,6 +423,11 @@ const screenTitles: Partial<Record<Screen, string>> = {
   feedUnavailable: "Security feed",
   feedDetail: "Feed details",
   profile: "Profile",
+  editProfile: "Edit profile",
+  settings: "Settings",
+  notificationSettings: "Notification settings",
+  permissions: "Permissions",
+  settingsInfo: "Settings",
   contacts: "Emergency contacts",
   contactEdit: "Emergency contact",
 };
@@ -343,6 +435,13 @@ const screenTitles: Partial<Record<Screen, string>> = {
 function categoryFor(id: string) {
   const normalized = id.trim().toLowerCase();
   return categories.find((category) => category.id === normalized || category.label.toLowerCase() === normalized) ?? categories[categories.length - 1];
+}
+
+function formatNotificationTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function Button({
@@ -407,12 +506,12 @@ function inputClass(error = false) {
   return `w-full rounded-xl border ${error ? "border-[#d92d20]" : "border-[#dfe7e0]"} bg-white px-3 py-3 text-sm text-[#18231d] placeholder:text-[#94a099] focus:border-[#087443] focus:outline-none focus:ring-2 focus:ring-[#087443]/15`;
 }
 
-function ScreenHeader({ title, onBack }: { title: string; onBack: () => void }) {
+function ScreenHeader({ title, onBack, showBack = true }: { title: string; onBack: () => void; showBack?: boolean }) {
   return (
     <div className="flex h-12 shrink-0 items-center justify-between border-b border-[#edf1ed] px-4">
-      <button onClick={onBack} aria-label="Go back" className="flex h-10 w-10 items-center justify-start text-[#35463c]">
-        <ArrowLeft className="h-5 w-5" />
-      </button>
+      {showBack
+        ? <button onClick={onBack} aria-label="Go back" className="flex h-10 w-10 items-center justify-start text-[#35463c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]"><ArrowLeft className="h-5 w-5" /></button>
+        : <span className="h-10 w-10" aria-hidden="true" />}
       <h1 className="truncate px-2 text-center text-sm font-semibold text-[#17271e]">{title}</h1>
       <span className="h-10 w-10" aria-hidden="true" />
     </div>
@@ -453,15 +552,14 @@ function Stepper({ step }: { step: number }) {
 }
 
 export default function ICEApp() {
-  const [screen, setScreen] = useState<Screen>("loginWelcome");
+  const [screen, setScreen] = useState<Screen>("signIn");
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [draft, setDraft] = useState<IncidentDraft>(emptyDraft);
   const [draftErrors, setDraftErrors] = useState<Record<string, string>>({});
-  const [reports, setReports] = useState(initialReports);
+  const [reports, setReports] = useState<Report[]>([]);
   const [quickReports, setQuickReports] = useState<QuickReport[]>([]);
   const [selectedQuickReportKey, setSelectedQuickReportKey] = useState<string | null>(null);
-  const [dismissedQuickReportKey, setDismissedQuickReportKey] = useState<string | null>(null);
   const [quickDetailsErrors, setQuickDetailsErrors] = useState<Record<string, string>>({});
   const [quickDetailsSaving, setQuickDetailsSaving] = useState(false);
   const [quickCategoryChoiceId, setQuickCategoryChoiceId] = useState<string | null>(null);
@@ -470,23 +568,38 @@ export default function ICEApp() {
   const [quickEvidenceObjectUrls] = useState(() => new Set<string>());
   const quickEventSequence = useRef(0);
   const quickReferenceSequence = useRef(0);
-  const [selectedReportId, setSelectedReportId] = useState(initialReports[0].id);
+  const [selectedReportId, setSelectedReportId] = useState("");
   const [reportFilter, setReportFilter] = useState("All");
   const [alerts, setAlerts] = useState(initialAlerts);
   const [selectedAlertId, setSelectedAlertId] = useState(initialAlerts[0].id);
-  const [alertAcknowledgementOrigin, setAlertAcknowledgementOrigin] = useState<"alerts" | "notifications">("alerts");
   const [notificationsRead, setNotificationsRead] = useState<string[]>([]);
-  const [selectedNotificationKind, setSelectedNotificationKind] = useState<"alert" | "report">("alert");
+  const [selectedNotificationId, setSelectedNotificationId] = useState<string | null>(null);
   const [feed] = useState(initialFeed);
   const [selectedFeedId, setSelectedFeedId] = useState(initialFeed[0].id);
   const [contacts, setContacts] = useState(initialContacts);
+  const [staffProfile, setStaffProfile] = useState(initialStaffProfile);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>({
+    incidentUpdates: true,
+    safetyInformation: true,
+  });
+  const [settingsInfo, setSettingsInfo] = useState({ title: "", description: "" });
+  const [profileSaved, setProfileSaved] = useState(false);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState({ name: "", relationship: "", phone: "", priority: "Tertiary" as EmergencyContact["priority"] });
   const [contactError, setContactError] = useState("");
-  const [showFirstLoginWelcome, setShowFirstLoginWelcome] = useState(false);
+  const [reportSearch, setReportSearch] = useState("");
+  const [supplementText, setSupplementText] = useState("");
+  const [supplementError, setSupplementError] = useState("");
+  const [supplementFailurePreview, setSupplementFailurePreview] = useState(false);
+  const [supplementSaving, setSupplementSaving] = useState(false);
+  const supplementSendLock = useRef(false);
   const [sosHasLocation, setSosHasLocation] = useState(true);
   const [sosAcknowledged, setSosAcknowledged] = useState(false);
-  const [demoSosStatus, setDemoSosStatus] = useState("Awaiting primary contact acknowledgement");
+  const [sosEvent, setSosEvent] = useState<SosEvent | null>(null);
+  const [sosRequestFailed, setSosRequestFailed] = useState(false);
+  const [demoSosStatus, setDemoSosStatus] = useState("Request has not been submitted.");
+  const sosActivationLock = useRef(false);
+  const sosEventSequence = useRef(0);
 
   useEffect(() => () => {
     quickEvidenceObjectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -498,7 +611,23 @@ export default function ICEApp() {
   const latestSentQuickReport = quickReports.find((report) => report.sendStatus === "sent");
   const selectedAlert = alerts.find((alert) => alert.id === selectedAlertId) ?? alerts[0];
   const selectedFeed = feed.find((item) => item.id === selectedFeedId) ?? feed[0];
-  const unreadCount = useMemo(() => Math.max(0, 2 - notificationsRead.length), [notificationsRead.length]);
+  const notificationItems = useMemo<NotificationItem[]>(() => [
+    ...initialSystemNotifications,
+    ...reports.map((report) => ({
+      id: `note-report-${report.id}`,
+      category: "Reports" as const,
+      title: `Report ${report.status.toLowerCase()}`,
+      summary: `${report.id} · ${report.category} · ${report.summary}`,
+      createdAt: report.createdAt,
+      relatedReportId: report.id,
+    })),
+  ], [reports]);
+  const selectedNotification = notificationItems.find((item) => item.id === selectedNotificationId);
+  const unreadCount = useMemo(
+    () => notificationItems.filter((item) => !notificationsRead.includes(item.id)).length,
+    [notificationItems, notificationsRead],
+  );
+  const alertsRequiringAcknowledgement = alerts.filter((alert) => alert.requiresAcknowledgement && !alert.acknowledged).length;
 
   function go(next: Screen, tab?: Tab) {
     setScreenStack((previous) => [...previous, screen]);
@@ -516,22 +645,24 @@ export default function ICEApp() {
       setActiveTab("home");
       return;
     }
-    setScreen(screenStack[screenStack.length - 1]);
+    const previousScreen = screenStack[screenStack.length - 1];
+    if (["alerts", "alertsEmpty", "alertsUnavailable", "alertDetail", "alertAcknowledged"].includes(previousScreen)) {
+      setActiveTab("alerts");
+    } else if (["notifications", "notificationsEmpty", "notificationsUnavailable", "notificationDetail"].includes(previousScreen)) {
+      setActiveTab("notifications");
+    }
+    setScreen(previousScreen);
     setScreenStack(screenStack.slice(0, -1));
   }
 
   function openTab(tab: Tab) {
     setScreenStack([]);
     setActiveTab(tab);
-    if (tab === "report") {
-      setDraft({ ...emptyDraft, dateTime: toLocalDateTime(new Date().toISOString()) });
-      setDraftErrors({});
-    }
     const target: Record<Tab, Screen> = {
       home: "home",
       alerts: "alerts",
-      report: "categories",
-      feed: "feed",
+      notifications: "notifications",
+      report: "reports",
       profile: "profile",
     };
     setScreen(target[tab]);
@@ -617,7 +748,6 @@ export default function ICEApp() {
     setQuickReports((previous) => previousAttempt
       ? previous.map((report) => report.key === quickReport.key ? quickReport : report)
       : [quickReport, ...previous]);
-    setDismissedQuickReportKey(null);
     window.setTimeout(() => {
       const failed = !navigator.onLine;
       const sequence = failed ? undefined : ++quickReferenceSequence.current;
@@ -662,7 +792,6 @@ export default function ICEApp() {
       setQuickReports((previous) => previous.map((item) => item.key === report.key
         ? { ...item, category: categoryFor(item.categoryId).label, detailStatus: "completed" }
         : item));
-      setDismissedQuickReportKey(null);
       setQuickDetailsSaving(false);
       quickSaveLock.current = false;
       setScreenStack([]);
@@ -725,7 +854,6 @@ export default function ICEApp() {
               detailStatus: "completed",
             }
           : report));
-        setDismissedQuickReportKey(null);
         setScreenStack([]);
         setScreen("home");
         setActiveTab("home");
@@ -734,10 +862,11 @@ export default function ICEApp() {
       const latestSequence = reports.reduce((latest, report) => {
         const match = /^INC-2026-(\d{6})$/.exec(report.id);
         return match ? Math.max(latest, Number(match[1])) : latest;
-      }, 145);
+      }, 0);
       const sequence = latestSequence + 1;
       const newReport: Report = {
         id: `INC-2026-${String(sequence).padStart(6, "0")}`,
+        createdAt: new Date().toISOString(),
         category: categoryFor(draft.category).label,
         summary: draft.summary.trim(),
         description: draft.description.trim(),
@@ -746,6 +875,7 @@ export default function ICEApp() {
         status: "Submitted",
         history: ["Submitted · just now"],
         evidence: draft.evidence.map(({ file }) => file.name),
+        supplementaryInformation: [],
       };
       setReports((previous) => [newReport, ...previous]);
       setSelectedReportId(newReport.id);
@@ -753,21 +883,47 @@ export default function ICEApp() {
     }, 850);
   }
 
-  function sendMockSos(continueWithoutLocation = false) {
-    if (!sosHasLocation && !continueWithoutLocation) {
-      go("sosUnavailable");
-      return;
-    }
-    setSosAcknowledged(false);
-    setDemoSosStatus("Awaiting primary contact acknowledgement");
-    go("sosSending");
-    window.setTimeout(() => setScreen("sosSent"), 950);
+  function openSos() {
+    setScreenStack([]);
+    setScreen(sosEvent ? sosRequestFailed ? "sosNotDelivered" : "sosOutcome" : "sosActivate");
   }
 
-  function acknowledgeAlert(alert: Alert, origin: "alerts" | "notifications" = "alerts") {
-    setAlerts((previous) => previous.map((item) => item.id === alert.id ? { ...item, acknowledged: true } : item));
-    setAlertAcknowledgementOrigin(origin);
-    replace("alertAcknowledged");
+  function sendMockSos() {
+    if (sosActivationLock.current) return;
+    if (sosEvent && !sosRequestFailed) {
+      setScreen("sosOutcome");
+      return;
+    }
+    const createdAt = new Date().toISOString();
+    const date = createdAt.slice(0, 10).replaceAll("-", "");
+    const event = sosEvent ?? {
+      reference: `SOS-${date}-${String(++sosEventSequence.current).padStart(3, "0")}`,
+      createdAt,
+      location: sosHasLocation ? "Demo location (not GPS)" : "Unavailable",
+    };
+    sosActivationLock.current = true;
+    if (!sosEvent) setSosEvent(event);
+    setSosRequestFailed(false);
+    setSosAcknowledged(false);
+    setDemoSosStatus("Processing this local demo request. No contact notification has been sent.");
+    setScreen("sosSending");
+    window.setTimeout(() => {
+      setDemoSosStatus("Request submitted in this local demo. No contact notification was sent.");
+      setScreen("sosOutcome");
+      sosActivationLock.current = false;
+    }, 950);
+  }
+
+  function previewSosFailure() {
+    setSosRequestFailed(true);
+    setDemoSosStatus("Request delivery failed in this local demo. No contact was reached.");
+    go("sosNotDelivered");
+  }
+
+  function acknowledgeAlert(alert: Alert) {
+    if (alert.acknowledged) return;
+    setAlerts((previous) => previous.map((item) => item.id === alert.id ? { ...item, acknowledged: true, acknowledgedAt: new Date().toISOString() } : item));
+    go("alertAcknowledged", "alerts");
   }
 
   function saveContact(event: FormEvent<HTMLFormElement>) {
@@ -805,41 +961,84 @@ export default function ICEApp() {
     go("contactEdit");
   }
 
-  function openSignIn() {
-    setScreen("signIn");
-  }
-
   function simulateSignIn() {
     setScreen("signInLoading");
     window.setTimeout(() => {
       setScreenStack([]);
       setActiveTab("home");
       setScreen("home");
-      setShowFirstLoginWelcome(true);
     }, 700);
   }
 
-  function markNotificationRead(id: string, kind: "alert" | "report", targetId: string) {
-    setNotificationsRead((previous) => previous.includes(id) ? previous : [...previous, id]);
-    setSelectedNotificationKind(kind);
-    if (kind === "alert") setSelectedAlertId(targetId);
-    else setSelectedReportId(targetId);
-    go("notificationDetail");
+  function submitSupplementaryInformation() {
+    const text = supplementText.trim();
+    if (!text) {
+      setSupplementError("Enter the additional information before sending.");
+      return;
+    }
+    if (supplementSendLock.current || !selectedReport) return;
+    setSupplementError("");
+    supplementSendLock.current = true;
+    setSupplementSaving(true);
+    setScreen("supplementSubmitting");
+    window.setTimeout(() => {
+      if (supplementFailurePreview) {
+        setSupplementFailurePreview(false);
+        setSupplementSaving(false);
+        supplementSendLock.current = false;
+        setScreen("supplementFailure");
+        return;
+      }
+      const entry = { id: `supp-${Date.now()}`, text, createdAt: new Date().toISOString() };
+      setReports((previous) => previous.map((report) => report.id === selectedReport.id
+        ? { ...report, supplementaryInformation: [...report.supplementaryInformation, entry] }
+        : report));
+      setSupplementText("");
+      setSupplementFailurePreview(false);
+      setSupplementSaving(false);
+      supplementSendLock.current = false;
+      setScreen("supplementSuccess");
+    }, 500);
   }
 
-  const title = screenTitles[screen];
-  const isLoginScreen = ["loginWelcome", "signIn", "signInLoading"].includes(screen);
-  const showNav = !["sosActivate", "sosSending", "sosSent", "sosCancelled", "sosUnavailable", "sosNotDelivered", "sosStatusUnavailable", "reportSubmitting", "loginWelcome", "signIn", "signInLoading"].includes(screen);
+  function restartSession() {
+    if (window.confirm("Start a fresh session? This clears reports and any changes made during this session.")) {
+      window.location.reload();
+    }
+  }
+
+  function openSettingsInfo(title: string, description: string) {
+    setSettingsInfo({ title, description });
+    go("settingsInfo");
+  }
+
+  function saveStaffProfile(nextProfile: StaffProfile) {
+    setStaffProfile(nextProfile);
+    setProfileSaved(true);
+    setScreenStack([]);
+    setActiveTab("profile");
+    setScreen("profile");
+  }
+
+  function markNotificationRead(item: NotificationItem) {
+    setSelectedNotificationId(item.id);
+    setNotificationsRead((previous) => previous.includes(item.id) ? previous : [...previous, item.id]);
+    if (item.relatedReportId) setSelectedReportId(item.relatedReportId);
+    go("notificationDetail", "notifications");
+  }
+
+  const title = screen === "settingsInfo" ? settingsInfo.title : screenTitles[screen];
+  const isLoginScreen = ["signIn", "signInLoading"].includes(screen);
+  const showNav = !["sosActivate", "sosConfirm", "sosSending", "sosOutcome", "sosSent", "sosCancelled", "sosUnavailable", "sosNotDelivered", "sosStatusUnavailable", "reportSubmitting", "signIn", "signInLoading", "supplementSubmitting"].includes(screen);
 
   return (
     <main className="ice-stage flex min-h-[100dvh] items-center justify-center bg-[#e9ece9] p-0 sm:p-5">
       <div className="ice-phone relative flex h-[100dvh] min-h-[640px] w-full max-w-[390px] flex-col overflow-hidden bg-[#f8faf8] shadow-[0_24px_70px_rgba(25,42,31,0.15)] sm:h-[min(900px,calc(100dvh-2.5rem))] sm:min-h-[700px] sm:rounded-[36px] sm:border sm:border-[#dfe7e0]">
         {!isLoginScreen && <PhoneTopBar unreadCount={unreadCount} />}
-        {title && !isLoginScreen && <ScreenHeader title={title} onBack={back} />}
+        {title && !isLoginScreen && <ScreenHeader title={title} onBack={back} showBack={screen !== "profile"} />}
         <div className={`ice-content min-h-0 flex-1 overflow-y-auto overscroll-contain ${isLoginScreen ? "" : "px-4 pb-4"}`}>
-          {screen === "loginWelcome" && <LoginWelcomeScreen onLogin={openSignIn} />}
-          {screen === "signIn" && <MicrosoftSignInScreen onBack={() => setScreen("loginWelcome")} onContinue={simulateSignIn} />}
-          {screen === "signInLoading" && <LoadingScreen icon={<ShieldCheck />} title="Signing in to ICE" detail="Prototype sign-in only. No account or credentials are being verified." />}
+          {screen === "signIn" && <MicrosoftSignInScreen onContinue={simulateSignIn} />}
+          {screen === "signInLoading" && <LoadingScreen icon={<ShieldCheck />} title="Signing in to ICE" detail="Sign-in is a visual flow only. No account or credentials are being verified." />}
           {screen === "home" && (
             <HomeScreen
               unreadCount={unreadCount}
@@ -847,20 +1046,16 @@ export default function ICEApp() {
               reports={reports}
               quickReport={currentQuickReport}
               latestSentQuickReport={latestSentQuickReport}
-              isQuickReportDismissed={dismissedQuickReportKey === latestSentQuickReport?.key}
               isQuickReportSending={currentQuickReport?.sendStatus === "sending"}
-              onNotifications={() => go("notifications", "alerts")}
+              onNotifications={() => go("notifications", "notifications")}
               onAlert={() => { setSelectedAlertId(alerts[0].id); go("alertDetail", "alerts"); }}
               onReport={() => startReport()}
               onCategory={requestQuickReportChoice}
               onShowMore={() => go("quickCategories", "home")}
               onContacts={() => go("contacts")}
-              onSOS={() => { setSosHasLocation(true); setSosAcknowledged(false); go("sosActivate"); }}
               onReports={() => go("reports", "report")}
               onQuickRetry={(key) => startQuickReport(currentQuickReport?.categoryId ?? "", key)}
               onTrackQuickReport={(report) => { setSelectedQuickReportKey(report.key); go("quickReportDetail", "home"); }}
-              onAddQuickDetails={(report) => startReport(report.categoryId, report)}
-              onDismissQuickReport={() => { if (latestSentQuickReport) setDismissedQuickReportKey(latestSentQuickReport.key); }}
             />
           )}
           {screen === "categories" && <CategoryScreen selected={draft.category} error={draftErrors.category} onSelect={(id) => patchDraft({ category: id })} onContinue={continueWithCategory} />}
@@ -873,42 +1068,85 @@ export default function ICEApp() {
           {screen === "reportLocation" && <LocationScreen draft={draft} errors={draftErrors} onChange={patchDraft} onNext={() => validateLocation() && go("reportEvidence")} onBack={back} />}
           {screen === "reportEvidence" && <EvidenceScreen draft={draft} onChange={patchDraft} onNext={() => go("reportReview")} />}
           {screen === "reportReview" && <ReviewScreen draft={draft} errors={draftErrors} onEdit={(target) => go(target)} onSubmit={() => finishReport()} onSimulateFailure={() => finishReport(true)} />}
-          {screen === "reportSubmitting" && <LoadingScreen icon={<ClipboardList />} title="Sending your report" detail="This is a local prototype submission. No report is being sent to a live NSIA service." />}
+          {screen === "reportSubmitting" && <LoadingScreen icon={<ClipboardList />} title="Sending your report" detail="Saving this report in the local demonstration." />}
           {screen === "reportSuccess" && <ReportResultScreen report={selectedReport} onReports={() => go("reports", "report")} onHome={() => openTab("home")} />}
           {screen === "reportFailure" && <ReportFailureScreen onReview={back} />}
-          {screen === "reports" && <ReportsScreen reports={reports} filter={reportFilter} onFilter={setReportFilter} onSelect={(report) => { setSelectedReportId(report.id); go("reportDetail"); }} onCreate={() => startReport()} onPreviewEmpty={() => go("reportsEmpty")} onPreviewUnavailable={() => go("reportsUnavailable")} />}
+          {screen === "reports" && <ReportsScreen reports={reports} quickReports={quickReports} filter={reportFilter} search={reportSearch} onSearch={setReportSearch} onFilter={setReportFilter} onSelect={(entry) => {
+            if (entry.quickReportKey) {
+              setSelectedQuickReportKey(entry.quickReportKey);
+              go("quickReportDetail");
+            } else {
+              setSelectedReportId(entry.id);
+              go("reportDetail");
+            }
+          }} onCreate={() => startReport()} onPreviewUnavailable={() => go("reportsUnavailable")} />}
           {screen === "reportsEmpty" && <OutcomeScreen icon={<FileText />} tone="gray" title="No reports yet" description="When you submit an incident report, it will appear here." button="Open reports" onClick={back} />}
           {screen === "reportsUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Reports unavailable" description="The report list cannot be loaded in this preview state. Your locally held form data remains unchanged." button="Retry reports" onClick={back} />}
-          {screen === "reportDetail" && selectedReport && <ReportDetailScreen report={selectedReport} onHistory={() => go("reportHistory")} />}
-          {screen === "reportHistory" && selectedReport && <HistoryScreen report={selectedReport} />}
-          {screen === "sosActivate" && <SosActivationScreen contacts={contacts} hasLocation={sosHasLocation} onLocationChange={setSosHasLocation} onSend={sendMockSos} onCancel={() => go("sosCancelled")} />}
-          {screen === "sosSending" && <LoadingScreen icon={<Siren />} title="Sending request" detail="Demonstration only. A real emergency contact is not being notified." />}
-          {screen === "sosSent" && <SosSentScreen contacts={contacts} acknowledged={sosAcknowledged} status={demoSosStatus} onAcknowledge={() => { setSosAcknowledged(true); setDemoSosStatus("Primary contact acknowledgement simulated"); }} onSimulateNoAck={() => setDemoSosStatus("No acknowledgement simulated · secondary escalation can be reviewed")} onSecondary={() => setDemoSosStatus("Secondary contact step previewed only")} onFailure={() => go("sosNotDelivered")} onStatusUnavailable={() => go("sosStatusUnavailable")} onHome={() => openTab("home")} />}
+          {screen === "reportDetail" && selectedReport && <ReportDetailScreen report={selectedReport} onHistory={() => go("reportHistory")} onSupplement={() => { setSupplementText(""); setSupplementError(""); setSupplementFailurePreview(false); go("supplementaryInformation"); }} />}
+          {screen === "reportHistory" && selectedReport && <HistoryScreen report={selectedReport} onBack={back} />}
+          {screen === "supplementaryInformation" && selectedReport && <SupplementaryInformationScreen report={selectedReport} text={supplementText} error={supplementError} saving={supplementSaving} onChange={(value) => { setSupplementText(value); if (value.trim()) setSupplementError(""); }} onSubmit={submitSupplementaryInformation} onCancel={back} onPreviewFailure={() => setSupplementFailurePreview(true)} />}
+          {screen === "supplementSubmitting" && <LoadingScreen icon={<Send />} title="Sending supplementary information" detail="Saving this update in the local demonstration." />}
+          {screen === "supplementSuccess" && <SupplementarySuccessScreen report={selectedReport} onReport={() => { setScreenStack(["reports"]); setScreen("reportDetail"); setActiveTab("report"); }} />}
+          {screen === "supplementFailure" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Information not sent" description="The update could not be saved. Your text is still available to retry." button="Try again" onClick={() => setScreen("supplementaryInformation")} secondaryAction={() => { setScreenStack(["reports"]); setScreen("reportDetail"); setActiveTab("report"); }} secondaryLabel="Back to report" />}
+          {screen === "sosActivate" && <SosActivationScreen contacts={contacts} hasLocation={sosHasLocation} onLocationChange={setSosHasLocation} onContinue={() => go("sosConfirm")} onContacts={() => go("contacts")} onCancel={() => openTab("home")} />}
+          {screen === "sosConfirm" && <SosConfirmScreen contacts={contacts} hasLocation={sosHasLocation} onConfirm={sendMockSos} onCancel={() => openTab("home")} />}
+          {screen === "sosSending" && sosEvent && <SosProcessingScreen event={sosEvent} />}
+          {screen === "sosOutcome" && sosEvent && <SosOutcomeScreen event={sosEvent} onStatus={() => go("sosSent")} onHome={() => openTab("home")} />}
+          {screen === "sosSent" && sosEvent && <SosSentScreen event={sosEvent} contacts={contacts} acknowledged={sosAcknowledged} status={demoSosStatus} onAcknowledge={() => { setSosAcknowledged(true); setDemoSosStatus("Primary contact acknowledgement simulated only; no notification was sent."); }} onSimulateNoAck={() => setDemoSosStatus("No acknowledgement has been received in this simulation. No escalation is configured.")} onFailure={previewSosFailure} onStatusUnavailable={() => go("sosStatusUnavailable")} onHome={() => openTab("home")} />}
           {screen === "sosCancelled" && <OutcomeScreen icon={<X />} tone="gray" title="SOS cancelled" description="The demo request was cancelled before sending. No emergency contact was notified." button="Back to Home" onClick={() => openTab("home")} />}
-          {screen === "sosUnavailable" && <OutcomeScreen icon={<MapPin />} tone="amber" title="Location unavailable" description="The demo could not find a location. You can retry location capture or continue without attaching location to the demo request." button="Try location again" onClick={() => replace("sosActivate")} secondaryAction={() => sendMockSos(true)} secondaryLabel="Continue without location" />}
-          {screen === "sosNotDelivered" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Request not delivered" description="The delivery-failure state is being previewed. No contact or service was reached." button="Try request again" onClick={() => replace("sosActivate")} secondaryAction={() => openTab("home")} secondaryLabel="Back to Home" />}
+          {screen === "sosUnavailable" && <OutcomeScreen icon={<MapPin />} tone="amber" title="Location unavailable" description="Location is unavailable. You can continue the local activation flow without attaching location." button="Continue without location" onClick={() => { setSosHasLocation(false); replace("sosActivate"); }} secondaryAction={() => openTab("home")} secondaryLabel="Cancel" />}
+          {screen === "sosNotDelivered" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Request not delivered" description={`${demoSosStatus} You can retry this same event; it will keep its reference.`} button="Retry same request" onClick={() => replace("sosActivate")} secondaryAction={() => openTab("home")} secondaryLabel="Back to Home" />}
           {screen === "sosStatusUnavailable" && <OutcomeScreen icon={<CircleHelp />} tone="gray" title="Status unavailable" description="The demo cannot retrieve a current contact acknowledgement status." button="Return to request" onClick={back} secondaryAction={() => openTab("home")} secondaryLabel="Back to Home" />}
-          {screen === "alerts" && <AlertsScreen alerts={alerts} onSelect={(alert) => { setSelectedAlertId(alert.id); go("alertDetail"); }} onPreviewEmpty={() => go("alertsEmpty")} onPreviewUnavailable={() => go("alertsUnavailable")} />}
+          {screen === "alerts" && <AlertsScreen alerts={alerts} onSelect={(alert) => { setSelectedAlertId(alert.id); go("alertDetail", "alerts"); }} onPreviewEmpty={() => go("alertsEmpty", "alerts")} onPreviewUnavailable={() => go("alertsUnavailable", "alerts")} />}
           {screen === "alertsEmpty" && <OutcomeScreen icon={<Bell />} tone="gray" title="No active alerts" description="There are no active alerts to display in this preview state." button="Back to alerts" onClick={back} />}
           {screen === "alertsUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Alerts unavailable" description="The alert list is unavailable in this preview state. Try again to return to the list." button="Retry alerts" onClick={back} />}
           {screen === "alertDetail" && selectedAlert && <AlertDetailScreen alert={selectedAlert} onAcknowledge={() => acknowledgeAlert(selectedAlert)} />}
-          {screen === "alertAcknowledged" && <OutcomeScreen icon={<Check />} tone="green" title="Acknowledgement saved" description="Your acknowledgement is saved in this local demo only." button={alertAcknowledgementOrigin === "notifications" ? "Back to notifications" : "Back to alerts"} onClick={back} />}
-          {screen === "notifications" && <NotificationsScreen read={notificationsRead} reports={reports} onSelect={(id, kind, targetId) => markNotificationRead(id, kind, targetId)} onPreviewEmpty={() => go("notificationsEmpty")} onPreviewUnavailable={() => go("notificationsUnavailable")} />}
-          {screen === "notificationsEmpty" && <OutcomeScreen icon={<Bell />} tone="gray" title="No notifications" description="New alerts and report updates will appear here." button="Back to notifications" onClick={back} />}
+          {screen === "alertAcknowledged" && selectedAlert && <AlertAcknowledgedScreen alert={selectedAlert} onBack={back} />}
+          {screen === "notifications" && <NotificationsScreen items={notificationItems} read={notificationsRead} onSelect={markNotificationRead} onPreviewEmpty={() => go("notificationsEmpty", "notifications")} onPreviewUnavailable={() => go("notificationsUnavailable", "notifications")} />}
+          {screen === "notificationsEmpty" && <OutcomeScreen icon={<Bell />} tone="gray" title="No notifications" description="System notices and updates about your reports will appear here." button="Back to notifications" onClick={back} />}
           {screen === "notificationsUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Notifications unavailable" description="Notification history could not be loaded in this preview state." button="Retry notifications" onClick={back} />}
-          {screen === "notificationDetail" && (selectedNotificationKind === "alert" && selectedAlert
-            ? <AlertDetailScreen alert={selectedAlert} onAcknowledge={() => acknowledgeAlert(selectedAlert, "notifications")} />
-            : selectedReport && <ReportDetailScreen report={selectedReport} onHistory={() => go("reportHistory")} />)}
+          {screen === "notificationDetail" && selectedNotification && <NotificationDetailScreen
+            item={selectedNotification}
+            isRead={notificationsRead.includes(selectedNotification.id)}
+            relatedReport={selectedNotification.relatedReportId ? reports.find((report) => report.id === selectedNotification.relatedReportId) : undefined}
+            hasRelatedReport={Boolean(selectedNotification.relatedReportId)}
+            onViewReport={() => {
+              if (!selectedNotification.relatedReportId || !reports.some((report) => report.id === selectedNotification.relatedReportId)) return;
+              setSelectedReportId(selectedNotification.relatedReportId);
+              go("reportDetail", "report");
+            }}
+          />}
+          {screen === "notificationDetail" && !selectedNotification && <OutcomeScreen icon={<Bell />} tone="gray" title="Notification unavailable" description="This notification is not available in the current session." button="Back to notifications" onClick={back} />}
           {screen === "feed" && <FeedScreen items={feed} onSelect={(item) => { setSelectedFeedId(item.id); go("feedDetail"); }} onPreviewEmpty={() => go("feedEmpty")} onPreviewUnavailable={() => go("feedUnavailable")} />}
           {screen === "feedEmpty" && <OutcomeScreen icon={<Newspaper />} tone="gray" title="No feed updates" description="There are no feed items in this preview state." button="Back to feed" onClick={back} />}
           {screen === "feedUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Security feed unavailable" description="Feed items could not be loaded in this preview state." button="Retry feed" onClick={back} />}
           {screen === "feedDetail" && selectedFeed && <FeedDetailScreen item={selectedFeed} />}
-          {screen === "profile" && <ProfileScreen onContacts={() => go("contacts")} onNotifications={() => go("notifications", "alerts")} />}
+          {screen === "profile" && <ProfileScreen
+            profile={staffProfile}
+            contactCount={contacts.length}
+            saved={profileSaved}
+            onDismissSaved={() => setProfileSaved(false)}
+            onContacts={() => go("contacts")}
+            onEdit={() => { setProfileSaved(false); go("editProfile"); }}
+            onSettings={() => go("settings")}
+            onRestartSession={restartSession}
+          />}
+          {screen === "editProfile" && <EditProfileScreen profile={staffProfile} onCancel={back} onSave={saveStaffProfile} />}
+          {screen === "settings" && <SettingsScreen
+            onNotifications={() => go("notificationSettings")}
+            onPermissions={() => go("permissions")}
+            onOpenInfo={openSettingsInfo}
+          />}
+          {screen === "notificationSettings" && <NotificationSettingsScreen
+            preferences={notificationPreferences}
+            onChange={setNotificationPreferences}
+          />}
+          {screen === "permissions" && <PermissionsScreen />}
+          {screen === "settingsInfo" && <SettingsInfoScreen description={settingsInfo.description} />}
           {screen === "contacts" && <ContactsScreen contacts={contacts} onAdd={() => editContact()} onEdit={editContact} onDelete={(id) => setContacts((previous) => previous.filter((contact) => contact.id !== id))} />}
           {screen === "contactEdit" && <ContactForm draft={contactDraft} error={contactError} editing={Boolean(editingContactId)} onChange={setContactDraft} onSave={saveContact} onCancel={back} />}
         </div>
-        {showNav && <BottomNav activeTab={activeTab} onChange={openTab} unreadCount={unreadCount} />}
-        {showFirstLoginWelcome && <FirstLoginWelcomeModal onDismiss={() => setShowFirstLoginWelcome(false)} />}
+        {showNav && <BottomNav activeTab={activeTab} onChange={openTab} alertActionCount={alertsRequiringAcknowledgement} onSOS={openSos} />}
         {quickCategoryChoiceId && (
           <QuickReportChoiceDialog
             category={categoryFor(quickCategoryChoiceId)}
@@ -936,19 +1174,41 @@ function PhoneTopBar({ unreadCount }: { unreadCount: number }) {
   );
 }
 
-function BottomNav({ activeTab, onChange, unreadCount }: { activeTab: Tab; onChange: (tab: Tab) => void; unreadCount: number }) {
+function BottomNav({ activeTab, onChange, alertActionCount, onSOS }: { activeTab: Tab; onChange: (tab: Tab) => void; alertActionCount: number; onSOS: () => void }) {
   return (
-    <nav aria-label="Main navigation" className="flex h-[76px] shrink-0 items-center justify-around border-t border-[#e4ebe5] bg-[#f8faf8] px-1 pb-[max(8px,env(safe-area-inset-bottom))] pt-2">
-      {tabs.map(({ id, label, icon: Icon }) => {
-        const active = activeTab === id;
-        return (
-          <button key={id} onClick={() => onChange(id)} aria-current={active ? "page" : undefined} className={`relative flex min-w-[54px] flex-col items-center gap-1 rounded-xl px-2 py-1 text-[10px] ${active ? "font-semibold text-[#087443]" : "text-[#607067]"}`}>
-            <span className={`flex h-7 w-9 items-center justify-center rounded-full ${active ? "bg-[#dff1e4]" : ""}`}><Icon className="h-5 w-5" strokeWidth={active ? 2.3 : 1.8} /></span>
-            <span>{label}</span>
-            {id === "alerts" && unreadCount > 0 && <span className="absolute right-2 top-0 h-2 w-2 rounded-full bg-[#d92d20] ring-2 ring-[#f8faf8]" />}
-          </button>
-        );
-      })}
+    <nav aria-label="Main navigation" className="relative z-20 h-[calc(104px+env(safe-area-inset-bottom))] w-full shrink-0">
+      <svg aria-hidden="true" viewBox="0 0 390 104" preserveAspectRatio="none" className="absolute inset-x-0 top-0 h-[104px] w-full" style={{ filter: "drop-shadow(0 -3px 7px rgba(27, 49, 36, 0.10))" }}>
+        <path d="M0 20C0 8 8 0 20 0H136C164 0 169 7 180 27C186 39 189 49 195 49C201 49 204 39 210 27C221 7 226 0 254 0H370C382 0 390 8 390 20V104H0Z" fill="#fbfcfb" stroke="#e4ebe5" strokeWidth="1" />
+      </svg>
+      <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-[env(safe-area-inset-bottom)] bg-[#fbfcfb]" />
+      <div className="relative z-30 grid h-full grid-cols-6 items-end px-1 pb-[max(9px,env(safe-area-inset-bottom))]">
+        {tabs.slice(0, 2).map(({ id, label, icon: Icon }) => {
+          const active = activeTab === id;
+          return (
+            <button key={id} onClick={() => onChange(id)} aria-current={active ? "page" : undefined} className={`relative z-10 flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[9px] ${active ? "font-semibold text-[#087443]" : "text-[#435348]"}`}>
+              <span className={`flex h-8 w-10 items-center justify-center rounded-full ${active ? "bg-[#dff1e4]" : ""}`}><Icon className="h-[21px] w-[21px]" strokeWidth={active ? 2.2 : 1.8} /></span>
+              <span className="whitespace-nowrap leading-none">{label}</span>
+              {id === "alerts" && alertActionCount > 0 && <span className="absolute right-[12px] top-[2px] h-2 w-2 rounded-full bg-[#d92d20] ring-2 ring-[#fbfcfb]" />}
+            </button>
+          );
+        })}
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+        {tabs.slice(2).map(({ id, label, icon: Icon }) => {
+          const active = activeTab === id;
+          return (
+            <button key={id} onClick={() => onChange(id)} aria-current={active ? "page" : undefined} className={`relative z-10 flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[9px] ${active ? "font-semibold text-[#087443]" : "text-[#435348]"}`}>
+              <span className={`flex h-8 w-10 items-center justify-center rounded-full ${active ? "bg-[#dff1e4]" : ""}`}><Icon className="h-[21px] w-[21px]" strokeWidth={active ? 2.2 : 1.8} /></span>
+              <span className="whitespace-nowrap leading-none">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="sos-halo pointer-events-none !absolute !left-1/2 !top-[-10px] !z-20 !w-[104px] -translate-x-1/2">
+        <button onClick={onSOS} aria-label="SOS, activate personal emergency alert" className="sos-action pointer-events-auto relative z-10 flex !w-[66px] flex-col items-center justify-center gap-0.5 rounded-full bg-[#df2929] text-white shadow-[0_3px_10px_rgba(155,32,32,0.2)] transition-transform active:scale-[0.97]">
+          <Siren className="h-6 w-6 stroke-[1.8]" /><span className="text-[11px] font-semibold leading-none tracking-wide">SOS</span>
+        </button>
+      </div>
     </nav>
   );
 }
@@ -959,7 +1219,6 @@ function HomeScreen({
   reports,
   quickReport,
   latestSentQuickReport,
-  isQuickReportDismissed,
   isQuickReportSending,
   onNotifications,
   onAlert,
@@ -967,19 +1226,15 @@ function HomeScreen({
   onCategory,
   onShowMore,
   onContacts,
-  onSOS,
   onReports,
   onQuickRetry,
   onTrackQuickReport,
-  onAddQuickDetails,
-  onDismissQuickReport,
 }: {
   unreadCount: number;
   alerts: Alert[];
   reports: Report[];
   quickReport?: QuickReport;
   latestSentQuickReport?: QuickReport;
-  isQuickReportDismissed: boolean;
   isQuickReportSending: boolean;
   onNotifications: () => void;
   onAlert: () => void;
@@ -987,15 +1242,15 @@ function HomeScreen({
   onCategory: (id: string) => void;
   onShowMore: () => void;
   onContacts: () => void;
-  onSOS: () => void;
   onReports: () => void;
   onQuickRetry: (key: string) => void;
   onTrackQuickReport: (report: QuickReport) => void;
-  onAddQuickDetails: (report: QuickReport) => void;
-  onDismissQuickReport: () => void;
 }) {
   const activeAlert = alerts.find((alert) => alert.priority === "Critical" && !alert.acknowledged);
   const latestReport = reports[0];
+  const latestQuickReport = latestSentQuickReport;
+  const showQuickReportAsLatest = Boolean(latestQuickReport
+    && (!latestReport || Date.parse(latestQuickReport.createdAt) >= Date.parse(latestReport.createdAt)));
   return (
     <div className="flex min-h-full flex-col">
       <header className="flex items-center justify-between py-3">
@@ -1021,13 +1276,10 @@ function HomeScreen({
         </div>
       )}
 
-      {quickReport && (quickReport.sendStatus !== "sent" || !isQuickReportDismissed) && (
+      {quickReport && quickReport.sendStatus !== "sent" && (
         <QuickReportHomePanel
           report={quickReport}
           onRetry={() => onQuickRetry(quickReport.key)}
-          onTrack={() => onTrackQuickReport(quickReport)}
-          onAddDetails={() => onAddQuickDetails(quickReport)}
-          onDismiss={onDismissQuickReport}
         />
       )}
 
@@ -1035,25 +1287,25 @@ function HomeScreen({
         <h2 className="text-[15px] font-semibold text-[#1d2d24]">Recent activity</h2>
         <button onClick={onReports} className="text-[11px] font-semibold text-[#087443]">View all <span aria-hidden="true">→</span></button>
       </div>
-      {latestSentQuickReport ? (
-        <button onClick={() => onTrackQuickReport(latestSentQuickReport)} className="mb-5 flex items-center gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f0f6f1]" style={{ color: categoryFor(latestSentQuickReport.categoryId).color }}>
-            {(() => { const Icon = categoryFor(latestSentQuickReport.categoryId).icon; return <Icon className="h-5 w-5" />; })()}
+      {showQuickReportAsLatest && latestQuickReport ? (
+        <button onClick={() => onTrackQuickReport(latestQuickReport)} className="mb-5 flex items-center gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f0f6f1]" style={{ color: categoryFor(latestQuickReport.categoryId).color }}>
+            {(() => { const Icon = categoryFor(latestQuickReport.categoryId).icon; return <Icon className="h-5 w-5" />; })()}
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-x-2 text-[10px] text-[#66736b]">
-              <StatusPill>{latestSentQuickReport.detailStatus === "completed" ? "Details added" : "Quick report sent"}</StatusPill>
-              <span>{new Date(latestSentQuickReport.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+              <StatusPill>{latestQuickReport.detailStatus === "completed" ? "Details added" : "Quick report sent"}</StatusPill>
+              <span>{new Date(latestQuickReport.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
             </span>
-            <span className="mt-1 block truncate text-[13px] font-medium text-[#1c2b22]">{latestSentQuickReport.summary || `${latestSentQuickReport.category} quick report`}</span>
-            <span className="block text-[10px] text-[#718078]">{latestSentQuickReport.reference}</span>
+            <span className="mt-1 block truncate text-[13px] font-medium text-[#1c2b22]">{latestQuickReport.summary || `${latestQuickReport.category} quick report`}</span>
+            <span className="block text-[10px] text-[#718078]">{latestQuickReport.reference}</span>
           </span>
           <ChevronRight className="h-4 w-4 shrink-0 text-[#647269]" />
         </button>
       ) : latestReport ? (
         <button onClick={onReports} className="mb-5 flex items-center gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
           <FileText className="h-5 w-5 shrink-0 text-[#2c6547]" />
-          <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-x-2 text-[10px] text-[#66736b]"><StatusPill>{latestReport.status}</StatusPill><span>09:41</span><span>·</span><span>{latestReport.location.split(",")[0]}</span></span><span className="mt-1 block truncate text-[13px] font-medium text-[#1c2b22]">{latestReport.summary}</span><span className="block text-[10px] text-[#718078]">{latestReport.id}</span></span>
+          <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-x-2 text-[10px] text-[#66736b]"><StatusPill>{latestReport.status}</StatusPill><span>{latestReport.dateTime}</span><span>·</span><span>{latestReport.location.split(",")[0]}</span></span><span className="mt-1 block truncate text-[13px] font-medium text-[#1c2b22]">{latestReport.summary}</span><span className="block text-[10px] text-[#718078]">{latestReport.id}</span></span>
           <ChevronRight className="h-4 w-4 shrink-0 text-[#647269]" />
         </button>
       ) : <p className="mb-5 rounded-2xl border border-dashed border-[#dfe7e0] p-4 text-center text-xs text-[#718078]">Your recent reports will appear here.</p>}
@@ -1077,11 +1329,6 @@ function HomeScreen({
           <ContactRound aria-hidden="true" className="h-[18px] w-[18px] shrink-0 text-[#32634b]" />
           <span className="flex min-w-0 flex-col items-start leading-tight"><span className="text-[11px] font-medium">Contacts</span><span className="text-[10px] text-[#66736b]">Emergency</span></span>
         </button>
-        <div className="sos-halo shrink-0">
-          <button onClick={onSOS} aria-label="Activate personal emergency alert" className="sos-action relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full bg-[#df2929] text-white transition-transform active:scale-[0.97]">
-            <Siren aria-hidden="true" className="h-7 w-7 stroke-[1.8]" /><span className="text-[15px] font-semibold leading-none tracking-wide">SOS</span>
-          </button>
-        </div>
         <button onClick={onReport} aria-label="Report with details" className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-0 py-2 text-[#1d2d24] hover:text-[#087443]">
           <ClipboardList className="h-[18px] w-[18px] shrink-0 text-[#32634b]" /><span className="flex flex-col items-start leading-tight"><span className="text-[11px] font-semibold">Report</span><span className="whitespace-nowrap text-[9px] text-[#66736b]">with details</span></span>
         </button>
@@ -1170,15 +1417,9 @@ function QuickReportChoiceDialog({
 function QuickReportHomePanel({
   report,
   onRetry,
-  onTrack,
-  onAddDetails,
-  onDismiss,
 }: {
   report: QuickReport;
   onRetry: () => void;
-  onTrack: () => void;
-  onAddDetails: () => void;
-  onDismiss: () => void;
 }) {
   if (report.sendStatus === "sending") {
     return (
@@ -1201,23 +1442,7 @@ function QuickReportHomePanel({
     );
   }
 
-  return (
-    <section aria-label="Quick report sent" className="mb-4 rounded-2xl border border-[#dcebdd] bg-[#f0f8f0] p-3">
-      <div className="flex items-start gap-2.5">
-        <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />
-        <div className="min-w-0 flex-1">
-          <h3 className="text-xs font-semibold text-[#135b39]">{report.detailStatus === "completed" ? "Quick report details saved" : "Quick report sent"}</h3>
-          <p className="mt-0.5 text-[11px] text-[#35483b]">{report.category}{report.location ? " · Location attached" : " · Location not available"}</p>
-          <p className="mt-0.5 break-all text-[10px] text-[#66736b]">Reference: {report.reference}</p>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            <button onClick={onTrack} className="flex min-h-10 items-center justify-center rounded-lg bg-[#087443] px-3 text-[11px] font-semibold text-white hover:bg-[#075e36]">Track report</button>
-            {report.detailStatus !== "completed" && <button onClick={onAddDetails} className="flex min-h-10 items-center justify-center rounded-lg border border-[#d5e5d7] bg-white px-3 text-[11px] font-semibold text-[#087443] hover:bg-[#f7fbf7]">Add details</button>}
-          </div>
-        </div>
-        <button onClick={onDismiss} aria-label="Dismiss quick report confirmation" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#65736a] hover:bg-white"><X className="h-4 w-4" /></button>
-      </div>
-    </section>
-  );
+  return null;
 }
 
 function toLocalDateTime(value: string) {
@@ -1374,7 +1599,7 @@ function CategoryScreen({
       </div>
       {error && <p role="alert" className="text-xs text-[#b42318]">{error}</p>}
       {!quick && <Button onClick={onContinue} disabled={!selected} className="w-full">Continue <ChevronRight className="h-4 w-4" /></Button>}
-      {!quick && <Panel className="flex items-start gap-2.5 bg-[#f2f8f3] p-3 text-xs text-[#52645a]"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p>Incident reports are stored as local demonstration data in this prototype.</p></Panel>}
+      {!quick && <Panel className="flex items-start gap-2.5 bg-[#f2f8f3] p-3 text-xs text-[#52645a]"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p>Incident reports are stored as local demonstration data in this app.</p></Panel>}
     </div>
   );
 }
@@ -1574,7 +1799,7 @@ function ReviewScreen({
           <button onClick={() => onEdit(step)} className="text-[11px] font-semibold text-[#087443]">Edit</button>
         </Panel>
       ))}
-      <p className="flex items-start gap-2 rounded-xl bg-[#f1f7f2] p-3 text-[11px] text-[#53645a]"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />Prototype only. Submitting creates a local demo report; it is not sent to a live NSIA service.</p>
+      <p className="flex items-start gap-2 rounded-xl bg-[#f1f7f2] p-3 text-[11px] text-[#53645a]"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />Submitting creates a local demo report; it is not sent to a live NSIA service.</p>
       <Button onClick={onSubmit} className="w-full">Submit report</Button>
       <button onClick={onSimulateFailure} className="w-full py-2 text-xs text-[#66736b] underline decoration-dotted underline-offset-2">Preview the unavailable state</button>
     </div>
@@ -1622,81 +1847,215 @@ function ReportFailureScreen({ onReview }: { onReview: () => void }) {
 
 function ReportsScreen({
   reports,
+  quickReports,
   filter,
+  search,
+  onSearch,
   onFilter,
   onSelect,
   onCreate,
-  onPreviewEmpty,
   onPreviewUnavailable,
 }: {
   reports: Report[];
+  quickReports: QuickReport[];
   filter: string;
+  search: string;
+  onSearch: (value: string) => void;
   onFilter: (filter: string) => void;
-  onSelect: (report: Report) => void;
+  onSelect: (report: ReportListEntry) => void;
   onCreate: () => void;
-  onPreviewEmpty: () => void;
   onPreviewUnavailable: () => void;
 }) {
-  const filters = ["All", "Submitted", "In progress", "Resolved"];
-  const visible = filter === "All" ? reports : reports.filter((report) => report.status === filter);
+  const filters = ["All", "Active", "Resolved"];
+  const query = search.trim().toLowerCase();
+  const entries: ReportListEntry[] = [
+    ...reports.map(({ id, createdAt, category, summary, location, dateTime, status }) => ({
+      id,
+      createdAt,
+      category,
+      summary,
+      location,
+      dateTime,
+      status,
+    })),
+    ...quickReports
+      .filter((report): report is QuickReport & { reference: string } => report.sendStatus === "sent" && Boolean(report.reference))
+      .map((report) => ({
+        id: report.reference,
+        createdAt: report.createdAt,
+        category: report.category,
+        summary: report.summary || `${report.category} quick report`,
+        location: report.location ?? "",
+        dateTime: new Date(report.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+        status: "Submitted" as const,
+        quickReportKey: report.key,
+      })),
+  ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const visible = entries.filter((report) => {
+    const matchesFilter = filter === "All"
+      || (filter === "Active" && report.status !== "Resolved")
+      || report.status === filter;
+    const matchesQuery = !query || [report.category, report.summary, report.id, report.location]
+      .some((value) => value.toLowerCase().includes(query));
+    return matchesFilter && matchesQuery;
+  });
   return (
-    <div className="space-y-4 py-4">
-      <div className="flex gap-1 overflow-x-auto pb-1">
-        {filters.map((item) => <button key={item} onClick={() => onFilter(item)} className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-medium ${filter === item ? "bg-[#087443] text-white" : "bg-[#eef2ef] text-[#526158]"}`}>{item}</button>)}
+    <div className="space-y-3 py-3">
+      <div><h2 className="text-sm font-semibold text-[#18231d]">My Reports</h2><p className="mt-1 text-xs text-[#66736b]">Track incidents you&apos;ve submitted.</p></div>
+      <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[#e1e8e2] bg-white px-3 focus-within:border-[#087443] focus-within:ring-2 focus-within:ring-[#087443]/15">
+        <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-[#66736b]" />
+        <input value={search} onChange={(event) => onSearch(event.target.value)} aria-label="Search reports by type, reference, or location" placeholder="Search reports" className="min-w-0 flex-1 bg-transparent text-xs text-[#18231d] outline-none placeholder:text-[#89958d]" />
+      </label>
+      <div className="flex gap-2" aria-label="Filter reports">
+        {filters.map((item) => <button key={item} onClick={() => onFilter(item)} aria-pressed={filter === item} className={`min-h-9 rounded-full px-3 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443] ${filter === item ? "bg-[#087443] text-white" : "bg-[#edf5ef] text-[#526158]"}`}>{item}{item === "All" ? ` (${entries.length})` : item === "Active" ? ` (${entries.filter((report) => report.status !== "Resolved").length})` : ` (${entries.filter((report) => report.status === "Resolved").length})`}</button>)}
       </div>
       {visible.length ? (
-        <div className="space-y-2.5">
-          {visible.map((report) => {
+        <section aria-label="Submitted reports" className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
+          {visible.map((report, index) => {
             const category = categoryFor(report.category.toLowerCase());
             const Icon = category.icon;
-            const tone = report.status === "Resolved" ? "green" : report.status === "In progress" ? "amber" : "gray";
-            return <button key={report.id} onClick={() => onSelect(report)} className="flex w-full items-center gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f0f6f1]" style={{ color: category.color }}><Icon className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-[#203127]">{report.summary}</span><span className="mt-0.5 block text-[10px] text-[#718078]">{report.id}</span><span className="mt-2 flex items-center gap-2"><StatusPill tone={tone}>{report.status}</StatusPill><span className="text-[9px] text-[#77837a]">{report.dateTime}</span></span></span><ChevronRight className="h-4 w-4 shrink-0 text-[#718078]" />
+            const tone = report.status === "Resolved" ? "green" : report.status === "In progress" ? "amber" : "blue";
+            return <button key={report.quickReportKey ?? report.id} onClick={() => onSelect(report)} className={`flex min-h-[84px] w-full items-center gap-3 p-3 text-left hover:bg-[#f8faf8] focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#087443] ${index ? "border-t border-[#edf1ed]" : ""}`}>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f0f6f1]" style={{ color: category.color }}><Icon className="h-5 w-5" strokeWidth={1.8} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><StatusPill tone={tone}>{report.status}</StatusPill><span className="text-[11px] text-[#66736b]">{report.dateTime}</span></span>
+                <span className="mt-1 block break-words text-[13px] font-semibold text-[#18231d]">{report.summary}</span>
+                <span className="mt-0.5 block break-all text-[11px] text-[#66736b]">{report.id}{report.location ? ` · ${report.location}` : ""}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-[#819087]" />
             </button>;
           })}
-        </div>
-      ) : <div className="py-10 text-center"><FileText className="mx-auto h-8 w-8 text-[#91a097]" /><p className="mt-3 text-sm font-semibold text-[#35463c]">No reports yet</p><p className="mt-1 text-xs text-[#718078]">Reports you submit will appear here.</p></div>}
-      {!visible.length && reports.length === 0 && <Panel className="text-xs text-[#65736a]">Reports are unavailable right now. Try again later.</Panel>}
-      <Button onClick={onCreate} variant="quiet" className="w-full"><Plus className="h-4 w-4" />Create a report</Button>
-      <p className="text-center text-[10px] text-[#829087]">Demonstration reports are stored in local app state.</p>
-      <div className="flex justify-center gap-4"><button onClick={onPreviewEmpty} className="text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview empty state</button><button onClick={onPreviewUnavailable} className="text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview unavailable state</button></div>
+        </section>
+      ) : <div className="rounded-2xl border border-dashed border-[#dfe7e0] px-4 py-8 text-center">
+        <FileText className="mx-auto h-7 w-7 text-[#829087]" />
+        <p className="mt-3 text-sm font-semibold text-[#35463c]">{entries.length ? "No matching reports" : "No reports yet"}</p>
+        <p className="mt-1 text-xs text-[#718078]">{entries.length ? "Try a different search or filter." : "Reports you submit will appear here."}</p>
+      </div>}
+      <Button onClick={onCreate} variant="quiet" className="w-full"><Plus className="h-4 w-4" />Report an incident</Button>
+      <p className="text-center text-[11px] text-[#829087]">Your reports are stored in this local session.</p>
+      <button onClick={onPreviewUnavailable} className="mx-auto block min-h-10 px-2 text-[11px] text-[#748077] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-[#087443]">Preview unavailable state</button>
     </div>
   );
 }
 
-function ReportDetailScreen({ report, onHistory }: { report: Report; onHistory: () => void }) {
+function ReportDetailScreen({ report, onHistory, onSupplement }: { report: Report; onHistory: () => void; onSupplement: () => void }) {
   const category = categoryFor(report.category.toLowerCase());
   const Icon = category.icon;
+  const tone = report.status === "Resolved" ? "green" : report.status === "In progress" ? "amber" : "blue";
   return (
-    <div className="space-y-3 py-4">
-      <StatusPill>{report.status}</StatusPill>
-      <div><h2 className="text-base font-semibold text-[#203127]">{report.id}</h2><p className="mt-1 text-[11px] text-[#758178]">{report.dateTime}</p></div>
+    <div className="space-y-3 py-3">
+      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0f6f1]" style={{ color: category.color }}><Icon className="h-5 w-5" /></span>
+          <div className="min-w-0 flex-1"><h2 className="break-words text-sm font-semibold text-[#18231d]">{report.summary}</h2><p className="mt-1 break-all text-xs text-[#66736b]">{report.id}</p><p className="mt-1 text-xs text-[#66736b]">Submitted {report.dateTime}</p></div>
+          <StatusPill tone={tone}>{report.status}</StatusPill>
+        </div>
+      </section>
       <Panel className="space-y-4">
         <DetailRow icon={<Icon />} label="Category" value={report.category} />
-        <DetailRow icon={<FileText />} label="Summary" value={report.summary} />
+        <DetailRow icon={<MapPin />} label="Location" value={report.location || "Not provided"} />
         <DetailRow icon={<Info />} label="Description" value={report.description} />
-        <DetailRow icon={<MapPin />} label="Location" value={report.location} />
-        <DetailRow icon={<CalendarDays />} label="Date and time" value={report.dateTime} />
+        <DetailRow icon={<CalendarDays />} label="Incident date and time" value={report.dateTime} />
         {report.evidence.length > 0 && <DetailRow icon={<Images />} label="Evidence" value={report.evidence.join(", ")} />}
+        {report.history.length > 1 && <DetailRow icon={<History />} label="Latest status update" value={report.history[report.history.length - 1]} />}
       </Panel>
-      <Button variant="secondary" onClick={onHistory} className="w-full"><History className="h-4 w-4" />View status history</Button>
-      <p className="text-center text-[10px] text-[#829087]">This report is illustrative local demo data.</p>
+      {report.supplementaryInformation.length > 0 && <section className="space-y-2">
+        <h3 className="text-xs font-semibold text-[#35463c]">Supplementary information</h3>
+        {report.supplementaryInformation.map((entry) => <Panel key={entry.id} className="p-3">
+          <p className="whitespace-pre-wrap break-words text-xs leading-5 text-[#26372c]">{entry.text}</p>
+          <p className="mt-2 text-[11px] text-[#718078]">Added {new Date(entry.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+        </Panel>)}
+      </section>}
+      <Button onClick={onHistory} className="w-full">View full timeline <ChevronRight className="h-4 w-4" /></Button>
+      <Button variant="quiet" onClick={onSupplement} className="w-full"><Plus className="h-4 w-4" />Add supplementary information</Button>
+      <p className="text-center text-[11px] text-[#829087]">Report details are saved in this local session.</p>
     </div>
   );
 }
 
-function HistoryScreen({ report }: { report: Report }) {
+function HistoryScreen({ report, onBack }: { report: Report; onBack: () => void }) {
+  const category = categoryFor(report.category.toLowerCase());
+  const Icon = category.icon;
+  const stages: Report["status"][] = ["Submitted", "In progress", "Resolved"];
+  const completedStages = new Set(report.history.map((event) => stages.find((stage) => event.toLowerCase().startsWith(stage.toLowerCase()))).filter((stage): stage is Report["status"] => Boolean(stage)));
   return (
-    <div className="space-y-4 py-4">
-      <p className="text-xs text-[#66736b]">Status updates for <span className="font-semibold text-[#35463c]">{report.id}</span></p>
-      <div className="space-y-0">
-        {report.history.map((event, index) => <div key={`${event}-${index}`} className="relative flex gap-3 pb-5 last:pb-0">
-          {index !== report.history.length - 1 && <span className="absolute left-[9px] top-5 h-full w-px bg-[#dfe7e0]" />}
-          <span className="relative z-10 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#e1f2e5] text-[#087443]"><Check className="h-3 w-3" /></span>
-          <p className="text-xs text-[#33443a]">{event}</p>
-        </div>)}
+    <div className="space-y-4 py-3">
+      <section className="flex items-start gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3">
+        <Icon className="mt-0.5 h-5 w-5 shrink-0" style={{ color: category.color }} />
+        <div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold text-[#18231d]">{report.summary}</p><p className="mt-1 break-all text-xs text-[#66736b]">{report.id}</p><div className="mt-2"><StatusPill>{report.status}</StatusPill></div></div>
+      </section>
+      <section aria-label="Report status timeline">
+        {stages.map((stage, index) => {
+          const isComplete = completedStages.has(stage);
+          const event = report.history.find((item) => item.toLowerCase().startsWith(stage.toLowerCase()));
+          return <div key={stage} className="relative flex gap-3 pb-5 last:pb-0">
+            {index < stages.length - 1 && <span className={`absolute left-[9px] top-5 h-full w-px ${isComplete ? "bg-[#087443]" : "bg-[#dfe7e0]"}`} aria-hidden="true" />}
+            <span className={`relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${isComplete ? "bg-[#087443] text-white" : "border-2 border-[#cbd5ce] bg-white text-[#718078]"}`}>{isComplete ? <Check className="h-3 w-3" /> : null}</span>
+            <div className="min-w-0 flex-1 rounded-xl border border-[#e1e8e2] bg-white p-3">
+              <p className="text-xs font-semibold text-[#26372c]">{stage}</p>
+              <p className="mt-1 text-xs text-[#66736b]">{event ? event.split("·").slice(1).join("·").trim() || "Recorded" : "Not started"}</p>
+            </div>
+          </div>;
+        })}
+      </section>
+      <p className="text-xs leading-5 text-[#66736b]">Status stages update when confirmed.</p>
+      <Button variant="quiet" onClick={onBack} className="w-full">Back to report</Button>
+    </div>
+  );
+}
+
+function SupplementaryInformationScreen({
+  report,
+  text,
+  error,
+  saving,
+  onChange,
+  onSubmit,
+  onCancel,
+  onPreviewFailure,
+}: {
+  report: Report;
+  text: string;
+  error: string;
+  saving: boolean;
+  onChange: (text: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  onPreviewFailure: () => void;
+}) {
+  return (
+    <div className="space-y-3 py-3">
+      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-3">
+        <p className="break-words text-[13px] font-semibold text-[#18231d]">{report.summary}</p>
+        <p className="mt-1 break-all text-xs text-[#66736b]">{report.id} · {report.category}</p>
+        <p className="mt-1 text-xs text-[#66736b]">{report.dateTime}{report.location ? ` · ${report.location}` : ""}</p>
+      </section>
+      <div>
+        <h2 className="text-sm font-semibold text-[#18231d]">Add supplementary information</h2>
+        <p className="mt-1 text-xs leading-5 text-[#66736b]">This is added to the existing report; it won&apos;t replace the original details.</p>
       </div>
+      <Field label="Additional information" required error={error}>
+        <textarea value={text} onChange={(event) => onChange(event.target.value.slice(0, 500))} maxLength={500} rows={5} placeholder="Add relevant details or updates…" className={`${inputClass(Boolean(error))} min-h-32 resize-y`} />
+      </Field>
+      <p className="text-right text-[11px] text-[#718078]">{text.length}/500</p>
+      <p className="flex items-start gap-2 text-xs leading-5 text-[#52645a]"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />Share only relevant information. Avoid unnecessary sensitive personal or medical details.</p>
+      <p className="text-xs text-[#66736b]">Saved locally in this demonstration; it is not sent to a live service.</p>
+      <div className="space-y-2 pt-1">
+        <Button onClick={onSubmit} disabled={saving} className="w-full">{saving ? <><LoaderCircle className="h-4 w-4 animate-spin" />Sending…</> : "Send supplementary information"}</Button>
+        <Button variant="secondary" onClick={onCancel} disabled={saving} className="w-full">Cancel</Button>
+      </div>
+      <button type="button" onClick={onPreviewFailure} disabled={saving} className="mx-auto block min-h-10 px-2 text-[11px] text-[#748077] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-[#087443]">Preview submission failure</button>
+    </div>
+  );
+}
+
+function SupplementarySuccessScreen({ report, onReport }: { report?: Report; onReport: () => void }) {
+  return (
+    <div className="flex min-h-[440px] flex-col items-center justify-center py-8 text-center">
+      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[#dff4e4] text-[#087443]"><CheckCircle2 className="h-9 w-9" /></span>
+      <h2 className="mt-4 text-lg font-semibold text-[#18231d]">Information added</h2>
+      <p className="mt-2 text-xs leading-5 text-[#66736b]">The update has been added to {report?.id ?? "your report"} in this local session.</p>
+      <Button onClick={onReport} className="mt-6 w-full">Back to report details</Button>
     </div>
   );
 }
@@ -1707,68 +2066,157 @@ function DetailRow({ icon, label, value }: { icon: ReactNode; label: string; val
 
 function AlertsScreen({ alerts, onSelect, onPreviewEmpty, onPreviewUnavailable }: { alerts: Alert[]; onSelect: (alert: Alert) => void; onPreviewEmpty: () => void; onPreviewUnavailable: () => void }) {
   const [filter, setFilter] = useState("All");
-  const filters = ["All", "Critical", "Advisory", "Informational"];
-  const visible = filter === "All" ? alerts : alerts.filter((alert) => alert.priority === filter);
+  const [search, setSearch] = useState("");
+  const filters = ["All", "Safety", "Access", "Security"];
+  const query = search.trim().toLowerCase();
+  const visible = alerts.filter((alert) => (
+    (filter === "All" || alert.category === filter)
+    && (!query || `${alert.title} ${alert.reference} ${alert.affectedArea} ${alert.description}`.toLowerCase().includes(query))
+  ));
   return (
-    <div className="space-y-4 py-4">
-      <div className="flex gap-1 overflow-x-auto pb-1">{filters.map((item) => <button key={item} onClick={() => setFilter(item)} className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-medium ${filter === item ? "bg-[#087443] text-white" : "bg-[#eef2ef] text-[#526158]"}`}>{item}</button>)}</div>
-      {visible.map((alert) => {
-        const tone = alert.priority === "Critical" ? "red" : alert.priority === "Advisory" ? "amber" : "blue";
-        const Icon = alert.priority === "Critical" ? AlertTriangle : alert.priority === "Advisory" ? BellRing : ShieldCheck;
-        return <button key={alert.id} onClick={() => onSelect(alert)} className="flex w-full items-start gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
-          <span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${tone === "red" ? "bg-[#fff0ed] text-[#c53124]" : tone === "amber" ? "bg-[#fff5df] text-[#ad720d]" : "bg-[#edf5ff] text-[#3470a8]"}`}><Icon className="h-4 w-4" /></span>
-          <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><StatusPill tone={tone}>{alert.priority}</StatusPill>{alert.acknowledged && <StatusPill>Acknowledged</StatusPill>}{alert.requiresAcknowledgement && !alert.acknowledged && <span className="text-[9px] font-medium text-[#a75e00]">Acknowledgement required</span>}</span><span className="mt-2 block text-xs font-semibold text-[#24352b]">{alert.title}</span><span className="mt-1 block text-[10px] text-[#718078]">{alert.time}</span></span><ChevronRight className="mt-2 h-4 w-4 shrink-0 text-[#718078]" />
-        </button>;
-      })}
-      {visible.length === 0 && <p className="py-12 text-center text-xs text-[#748077]">No alerts in this category.</p>}
-      <p className="text-center text-[10px] text-[#829087]">Illustrative alerts for this local prototype.</p>
-      <div className="flex justify-center gap-4"><button onClick={onPreviewEmpty} className="text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview no active alerts</button><button onClick={onPreviewUnavailable} className="text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview unavailable</button></div>
+    <div className="space-y-3 py-3">
+      <div><h2 className="text-sm font-semibold text-[#203127]">Admin-issued safety alerts</h2><p className="mt-1 text-[11px] text-[#748077]">Updates published by your organisation.</p></div>
+      <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[#dfe7e0] bg-white px-3 text-[#6d7a71] focus-within:border-[#087443] focus-within:ring-2 focus-within:ring-[#087443]/15">
+        <Search className="h-4 w-4 shrink-0" />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search alerts or locations" className="min-w-0 flex-1 bg-transparent text-xs text-[#18231d] outline-none placeholder:text-[#94a099]" />
+      </label>
+      <div className="flex gap-1 overflow-x-auto pb-1" role="group" aria-label="Filter alerts by category">{filters.map((item) => <button key={item} onClick={() => setFilter(item)} aria-pressed={filter === item} className={`min-h-10 shrink-0 rounded-full px-3 text-[10px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443] ${filter === item ? "bg-[#087443] text-white" : "bg-[#eef2ef] text-[#526158]"}`}>{item}</button>)}</div>
+      <div className="divide-y divide-[#e8ede9] overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
+        {visible.map((alert) => {
+          const tone = alert.priority === "Critical" ? "red" : alert.priority === "Advisory" ? "amber" : "blue";
+          const Icon = alert.priority === "Critical" ? AlertTriangle : alert.priority === "Advisory" ? BellRing : ShieldCheck;
+          return <button key={alert.id} onClick={() => onSelect(alert)} className="flex min-h-[76px] w-full items-center gap-3 px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#087443]">
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tone === "red" ? "bg-[#fff0ed] text-[#c53124]" : tone === "amber" ? "bg-[#fff5df] text-[#ad720d]" : "bg-[#edf5ff] text-[#3470a8]"}`}><Icon className="h-4 w-4" /></span>
+            <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-1.5"><span className="text-[9px] font-semibold text-[#087443]">{alert.category}</span><span aria-hidden="true" className="text-[9px] text-[#a1aaa4]">·</span><span className={`text-[9px] font-medium ${tone === "red" ? "text-[#b3261e]" : tone === "amber" ? "text-[#98610a]" : "text-[#3470a8]"}`}>{alert.priority}</span>{alert.requiresAcknowledgement && !alert.acknowledged && <span className="text-[9px] font-medium text-[#a75e00]">· Action required</span>}</span><span className="mt-1 block truncate text-xs font-semibold text-[#24352b]">{alert.title}</span><span className="mt-0.5 block truncate text-[10px] text-[#718078]">{alert.affectedArea} · {alert.time}</span></span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-[#718078]" />
+          </button>;
+        })}
+        {visible.length === 0 && <p className="px-4 py-10 text-center text-xs text-[#748077]">No alerts match this search or category.</p>}
+      </div>
+      <p className="text-center text-[10px] text-[#829087]">Illustrative alerts; not a live organisation feed.</p>
+      <div className="flex justify-center gap-4"><button onClick={onPreviewEmpty} className="min-h-10 px-2 text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview no active alerts</button><button onClick={onPreviewUnavailable} className="min-h-10 px-2 text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview unavailable</button></div>
     </div>
   );
 }
 
 function AlertDetailScreen({ alert, onAcknowledge }: { alert: Alert; onAcknowledge: () => void }) {
   const tone = alert.priority === "Critical" ? "red" : alert.priority === "Advisory" ? "amber" : "blue";
+  const [shareFeedback, setShareFeedback] = useState("");
+
+  async function shareAlert() {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: alert.title, text: `${alert.description}\n${alert.affectedArea}` });
+        setShareFeedback("Share sheet opened.");
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(`${alert.title}\n${alert.description}\n${alert.affectedArea}`);
+        setShareFeedback("Alert details copied to clipboard.");
+      } else {
+        setShareFeedback("Sharing is unavailable in this browser.");
+      }
+    } catch {
+      setShareFeedback("Sharing was cancelled or unavailable. The alert has not been shared.");
+    }
+  }
+
   return (
     <div className="space-y-4 py-4">
-      <StatusPill tone={tone}>{alert.priority}</StatusPill>
-      <div><h2 className="text-lg font-semibold leading-snug text-[#1d2d24]">{alert.title}</h2><p className="mt-1 text-[11px] text-[#758178]">{alert.time}</p></div>
-      <Panel><p className="text-sm leading-6 text-[#394a40]">{alert.description}</p></Panel>
+      <div className="flex flex-wrap items-center gap-2"><StatusPill tone={tone}>{alert.priority}</StatusPill><StatusPill>{alert.category}</StatusPill></div>
+      <div><h2 className="text-lg font-semibold leading-snug text-[#1d2d24]">{alert.title}</h2><p className="mt-1 text-[11px] text-[#758178]">{alert.time} · {alert.reference}</p></div>
+      <Panel className="space-y-3">
+        <DetailRow icon={<MapPin />} label="Affected area" value={alert.affectedArea} />
+        <DetailRow icon={<ShieldCheck />} label="Issued by" value={alert.source} />
+        <div className="border-t border-[#edf1ed] pt-3"><p className="text-sm leading-6 text-[#394a40]">{alert.description}</p></div>
+      </Panel>
+      <div className="flex items-start gap-2 rounded-xl bg-[#f3f6f4] p-3"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p className="text-xs leading-5 text-[#526158]">Sharing classification: {alert.classification}.</p></div>
       {alert.requiresAcknowledgement ? alert.acknowledged
-        ? <p className="rounded-xl bg-[#edf7ef] p-3 text-xs text-[#087443]">You acknowledged this alert in the local demo.</p>
-        : <Panel className="bg-[#fff8e9]"><p className="text-xs font-semibold text-[#795413]">This alert requires acknowledgement.</p><p className="mt-1 text-[11px] text-[#856b3d]">Acknowledging is recorded locally for demonstration only.</p></Panel>
+        ? <p className="rounded-xl bg-[#edf7ef] p-3 text-xs text-[#087443]">Acknowledged in this session{alert.acknowledgedAt ? ` · ${new Date(alert.acknowledgedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : ""}.</p>
+        : <Panel className="bg-[#fff8e9]"><p className="text-xs font-semibold text-[#795413]">This alert requires acknowledgement.</p><p className="mt-1 text-[11px] text-[#856b3d]">Acknowledgement is recorded in this app session only.</p></Panel>
         : <p className="rounded-xl bg-[#f3f6f4] p-3 text-xs text-[#647269]">No acknowledgement is required for this alert.</p>}
-      {alert.requiresAcknowledgement && !alert.acknowledged && <Button onClick={onAcknowledge} className="w-full">Acknowledge</Button>}
-      <p className="text-center text-[10px] text-[#829087]">Mock alert. Follow verified NSIA channels for live information.</p>
+      {alert.requiresAcknowledgement && !alert.acknowledged && <Button onClick={onAcknowledge} className="w-full">Acknowledge alert</Button>}
+      {alert.classification === "Shareable" && <><Button variant="secondary" onClick={shareAlert} className="w-full"><ExternalLink className="h-4 w-4" />Share alert</Button>{shareFeedback && <p role="status" className="text-center text-[11px] text-[#66736b]">{shareFeedback}</p>}</>}
+      <p className="text-center text-[10px] text-[#829087]">Illustrative organisation alert. Follow verified channels for live information.</p>
     </div>
   );
 }
 
-function NotificationsScreen({
-  read,
-  reports,
-  onSelect,
-  onPreviewEmpty,
-  onPreviewUnavailable,
-}: {
+function AlertAcknowledgedScreen({ alert, onBack }: { alert: Alert; onBack: () => void }) {
+  return (
+    <div className="flex min-h-[440px] flex-col items-center justify-center py-8 text-center">
+      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[#dff4e4] text-[#087443]"><CheckCircle2 className="h-9 w-9" /></span>
+      <h2 className="mt-4 text-lg font-semibold text-[#18231d]">Alert acknowledged</h2>
+      <p className="mt-2 max-w-[280px] text-xs leading-5 text-[#66736b]">{alert.title}</p>
+      <p className="mt-1 text-[10px] text-[#829087]">Acknowledged in this session{alert.acknowledgedAt ? ` · ${new Date(alert.acknowledgedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}` : ""}.</p>
+      <Button onClick={onBack} className="mt-6 w-full">Back to alert details</Button>
+    </div>
+  );
+}
+
+function NotificationsScreen({ items, read, onSelect, onPreviewEmpty, onPreviewUnavailable }: {
+  items: NotificationItem[];
   read: string[];
-  reports: Report[];
-  onSelect: (id: string, kind: "alert" | "report", targetId: string) => void;
+  onSelect: (item: NotificationItem) => void;
   onPreviewEmpty: () => void;
   onPreviewUnavailable: () => void;
 }) {
-  const items = [
-    { id: "note-alert-flood", targetId: "alert-flood", kind: "alert" as const, title: "Heavy flooding reported nearby", meta: "New alert · Today, 09:31", icon: AlertTriangle },
-    { id: "note-report", targetId: reports[0]?.id, kind: "report" as const, title: "Incident update", meta: `Your report ${reports[0]?.id ?? ""} · Yesterday`, icon: FileText },
-  ];
+  const [filter, setFilter] = useState("All");
+  const [search, setSearch] = useState("");
+  const filters = ["All", "Reports", "System", "Account"];
+  const query = search.trim().toLowerCase();
+  const visible = items.filter((item) => (
+    (filter === "All" || item.category === filter)
+    && (!query || `${item.title} ${item.summary} ${item.category}`.toLowerCase().includes(query))
+  ));
+  const sortedItems = [...visible].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
   return (
-    <div className="space-y-2.5 py-4">
-      {items.map(({ id, targetId, kind, title, meta, icon: Icon }) => <button key={id} onClick={() => targetId && onSelect(id, kind, targetId)} className="flex w-full items-center gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eff6f0] text-[#087443]"><Icon className="h-5 w-5" /></span>
-        <span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#24352b]">{title}</span><span className="mt-1 block text-[10px] text-[#758178]">{meta}</span></span>{read.includes(id) ? <Check className="h-4 w-4 text-[#829087]" /> : <span className="h-2 w-2 rounded-full bg-[#087443]" />}
-      </button>)}
-      <p className="pt-2 text-center text-[10px] text-[#829087]">Notification history is local illustrative data.</p>
-      <div className="flex justify-center gap-4"><button onClick={onPreviewEmpty} className="text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview empty state</button><button onClick={onPreviewUnavailable} className="text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview unavailable</button></div>
+    <div className="space-y-3 py-3">
+      <div><h2 className="text-sm font-semibold text-[#203127]">System notifications</h2><p className="mt-1 text-[11px] text-[#748077]">System notices and updates about your activity.</p></div>
+      <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[#dfe7e0] bg-white px-3 text-[#6d7a71] focus-within:border-[#087443] focus-within:ring-2 focus-within:ring-[#087443]/15">
+        <Search className="h-4 w-4 shrink-0" />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notifications" className="min-w-0 flex-1 bg-transparent text-xs text-[#18231d] outline-none placeholder:text-[#94a099]" />
+      </label>
+      <div className="flex gap-1 overflow-x-auto pb-1" role="group" aria-label="Filter notifications by category">{filters.map((item) => <button key={item} onClick={() => setFilter(item)} aria-pressed={filter === item} className={`min-h-10 shrink-0 rounded-full px-3 text-[10px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443] ${filter === item ? "bg-[#087443] text-white" : "bg-[#eef2ef] text-[#526158]"}`}>{item}</button>)}</div>
+      <div className="divide-y divide-[#e8ede9] overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
+        {sortedItems.map((item) => {
+          const isRead = read.includes(item.id);
+          const Icon = item.category === "Reports" ? FileText : item.category === "Account" ? UserRound : Bell;
+          return <button key={item.id} onClick={() => onSelect(item)} className="flex min-h-[76px] w-full items-center gap-3 px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#087443]">
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${item.category === "Reports" ? "bg-[#edf5ef] text-[#087443]" : "bg-[#f0f4f8] text-[#536b82]"}`}><Icon className="h-4 w-4" /></span>
+            <span className="min-w-0 flex-1"><span className="flex items-center gap-2"><span className="text-[9px] font-semibold text-[#087443]">{item.category}</span>{!isRead && <span className="rounded-full bg-[#e6f4e9] px-1.5 py-0.5 text-[8px] font-medium text-[#087443]">Unread</span>}</span><span className="mt-1 block truncate text-xs font-semibold text-[#24352b]">{item.title}</span><span className="mt-0.5 block truncate text-[10px] text-[#718078]">{item.summary}</span><span className="mt-0.5 block text-[9px] text-[#8a968e]">{formatNotificationTime(item.createdAt)}</span></span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-[#718078]" />
+          </button>;
+        })}
+        {sortedItems.length === 0 && <p className="px-4 py-10 text-center text-xs text-[#748077]">{items.length ? "No notifications match this search or category." : "No system notifications yet."}</p>}
+      </div>
+      <p className="text-center text-[10px] text-[#829087]">Illustrative system notices; report updates use this session&apos;s report data.</p>
+      <div className="flex justify-center gap-4"><button onClick={onPreviewEmpty} className="min-h-10 px-2 text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview empty state</button><button onClick={onPreviewUnavailable} className="min-h-10 px-2 text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview unavailable</button></div>
+    </div>
+  );
+}
+
+function NotificationDetailScreen({ item, isRead, relatedReport, hasRelatedReport, onViewReport }: {
+  item: NotificationItem;
+  isRead: boolean;
+  relatedReport?: Report;
+  hasRelatedReport: boolean;
+  onViewReport: () => void;
+}) {
+  return (
+    <div className="space-y-4 py-4">
+      <div className="flex flex-wrap items-center gap-2"><StatusPill>{item.category}</StatusPill><StatusPill tone={isRead ? "gray" : "blue"}>{isRead ? "Read" : "Unread"}</StatusPill></div>
+      <div><h2 className="text-lg font-semibold leading-snug text-[#1d2d24]">{item.title}</h2><p className="mt-1 text-[11px] text-[#758178]">{formatNotificationTime(item.createdAt)}</p></div>
+      <Panel><p className="text-sm leading-6 text-[#394a40]">{item.summary}</p></Panel>
+      {item.category === "Reports" && relatedReport && <Panel className="space-y-3">
+        <p className="text-xs font-semibold text-[#26372c]">Related report</p>
+        <DetailRow icon={<FileText />} label="Reference" value={relatedReport.id} />
+        <DetailRow icon={<ClipboardList />} label="Category" value={relatedReport.category} />
+        <DetailRow icon={<CheckCircle2 />} label="Current status" value={relatedReport.status} />
+        <DetailRow icon={<CalendarDays />} label="Submitted" value={relatedReport.dateTime} />
+        {relatedReport.location && <DetailRow icon={<MapPin />} label="Location" value={relatedReport.location} />}
+      </Panel>}
+      {hasRelatedReport && !relatedReport && <p role="status" className="rounded-xl bg-[#fff8e9] p-3 text-xs leading-5 text-[#795413]">The related report is not available in this session, so it cannot be opened.</p>}
+      {item.category === "Reports" && relatedReport && <Button onClick={onViewReport} className="w-full">View report<ChevronRight className="h-4 w-4" /></Button>}
+      <p className="text-center text-[10px] text-[#829087]">Notification details are held in this app session.</p>
     </div>
   );
 }
@@ -1833,57 +2281,149 @@ function SosActivationScreen({
   contacts,
   hasLocation,
   onLocationChange,
-  onSend,
+  onContinue,
+  onContacts,
   onCancel,
 }: {
   contacts: EmergencyContact[];
   hasLocation: boolean;
   onLocationChange: (value: boolean) => void;
-  onSend: () => void;
+  onContinue: () => void;
+  onContacts: () => void;
+  onCancel: () => void;
+}) {
+  const orderedContacts = ["Primary", "Secondary", "Tertiary"].flatMap((priority) => (
+    contacts.filter((contact) => contact.priority === priority)
+  ));
+  return (
+    <div className="space-y-4 py-3">
+      <section className="flex flex-col items-center rounded-2xl bg-[#fff7f6] px-4 py-4 text-center">
+        <div className="sos-halo !w-[112px]">
+          <div className="sos-action relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full bg-[#df2929] text-white shadow-sm">
+            <Siren className="h-6 w-6 stroke-[1.8]" /><span className="text-xs font-semibold">SOS</span>
+          </div>
+        </div>
+        <h2 className="mt-3 text-lg font-semibold text-[#203127]">Personal Emergency Alert</h2>
+        <p className="mt-1 max-w-[280px] text-xs leading-5 text-[#68756c]">Use this if you need urgent assistance. Your configured contacts may be notified when an alert is activated.</p>
+      </section>
+      <Panel className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-[#26372c]">Event location</p>
+          <span className={`flex items-center gap-1.5 text-[10px] font-medium ${hasLocation ? "text-[#087443]" : "text-[#98610a]"}`}><MapPin className="h-3.5 w-3.5" />{hasLocation ? "Demo location available" : "Unavailable"}</span>
+        </div>
+        <p className="text-[10px] leading-4 text-[#6a786f]">{hasLocation ? "A labelled demo location may be included. Device GPS is not accessed." : "Location is unavailable; activation can continue without it."}</p>
+        <button onClick={() => onLocationChange(!hasLocation)} className="min-h-11 rounded-lg text-left text-[11px] font-semibold text-[#087443] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">{hasLocation ? "Preview unavailable location" : "Use demo location"}</button>
+      </Panel>
+      <Panel className="space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-[#26372c]">Emergency contacts</p>
+          <button onClick={onContacts} className="min-h-11 px-2 text-[11px] font-semibold text-[#087443] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">Manage</button>
+        </div>
+        {orderedContacts.length > 0 ? orderedContacts.map((contact) => (
+          <div key={contact.id} className="flex items-center gap-3 border-t border-[#edf1ed] pt-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#edf5ef] text-[#087443]"><UserRound className="h-4 w-4" /></span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-[#26372c]">{contact.name}</span><span className="block text-[10px] text-[#758178]">{contact.priority}{contact.priority === "Tertiary" ? " · optional" : ""}</span></span>
+          </div>
+        )) : <p className="rounded-lg bg-[#f5f7f5] p-3 text-[11px] leading-4 text-[#66736b]">No emergency contacts are configured. Manage contacts before relying on notifications.</p>}
+        <p className="border-t border-[#e5ebe6] pt-2.5 text-[10px] leading-4 text-[#6a786f]">Location is included only when available and permitted. This preview does not send contact notifications.</p>
+      </Panel>
+      <Button onClick={onContinue} className="w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">Continue to activate<ChevronRight className="h-4 w-4" /></Button>
+      <Button variant="secondary" onClick={onCancel} className="w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">Cancel</Button>
+    </div>
+  );
+}
+
+function SosConfirmScreen({
+  contacts,
+  hasLocation,
+  onConfirm,
+  onCancel,
+}: {
+  contacts: EmergencyContact[];
+  hasLocation: boolean;
+  onConfirm: () => void;
   onCancel: () => void;
 }) {
   const primary = contacts.find((contact) => contact.priority === "Primary");
   return (
     <div className="space-y-4 py-4">
-      <div className="flex flex-col items-center rounded-2xl bg-[#fff4f2] px-4 py-6 text-center">
-        <div className="sos-halo !w-[132px]">
-          <div className="sos-action relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full bg-[#df2929] text-white shadow-sm">
-            <Siren className="h-7 w-7" /><span className="text-[15px] font-semibold">SOS</span>
+      <section className="flex flex-col items-center rounded-2xl bg-[#fff7f6] px-4 py-5 text-center">
+        <div className="sos-halo !w-[128px]">
+          <div className="sos-action relative z-10 flex flex-col items-center justify-center rounded-full bg-[#df2929] text-white shadow-sm">
+            <Siren className="h-8 w-8 stroke-[1.8]" />
           </div>
         </div>
-        <h2 className="mt-5 text-lg font-semibold text-[#b3261e]">Personal emergency alert</h2>
-        <p className="mt-1 max-w-[260px] text-xs leading-5 text-[#68756c]">This prototype will demonstrate a contact-notification request. No emergency services are contacted.</p>
-      </div>
+        <h2 className="mt-4 text-lg font-semibold text-[#203127]">Confirm SOS activation</h2>
+        <p className="mt-2 max-w-[280px] text-xs leading-5 text-[#68756c]">Confirm only if you need urgent assistance. This action records an SOS request.</p>
+      </section>
       <Panel className="space-y-3">
-        <p className="text-xs font-semibold text-[#26372c]">Before you continue</p>
-        <div className="flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e8f5eb] text-[#087443]"><UserRound className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block text-[10px] text-[#758178]">Primary emergency contact</span><span className="text-xs font-medium text-[#26372c]">{primary?.name ?? "No primary contact configured"}</span></span></div>
-        <div className="flex items-center gap-3"><span className={`flex h-8 w-8 items-center justify-center rounded-full ${hasLocation ? "bg-[#e8f5eb] text-[#087443]" : "bg-[#fff5df] text-[#a96800]"}`}><MapPin className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block text-[10px] text-[#758178]">Location</span><span className="text-xs font-medium text-[#26372c]">{hasLocation ? "Demo location available" : "Unavailable"}</span></span></div>
-        <button onClick={() => onLocationChange(!hasLocation)} className="text-left text-[11px] font-semibold text-[#087443]">{hasLocation ? "Simulate unavailable location" : "Use demo location"}</button>
+        <div className="flex items-start gap-3"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p className="text-xs leading-5 text-[#35463c]">Event location: {hasLocation ? "labelled demo location, not device GPS" : "unavailable; request can continue without it"}.</p></div>
+        <div className="flex items-start gap-3"><UserRound className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p className="text-xs leading-5 text-[#35463c]">Primary contact: {primary?.name ?? "not configured"}.</p></div>
+        <p className="border-t border-[#e5ebe6] pt-3 text-[10px] leading-4 text-[#6a786f]">This local preview records the request only. No contact notification or emergency-service dispatch is made.</p>
       </Panel>
-      <Button variant="danger" onClick={onSend} className="w-full"><Siren className="h-4 w-4" />Send demo request</Button>
-      <Button variant="secondary" onClick={onCancel} className="w-full">Cancel</Button>
-      <p className="text-center text-[10px] text-[#829087]">No hold duration or escalation timer is assumed. This is a manual demo interaction.</p>
+      <Button variant="danger" onClick={onConfirm} className="w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]"><Siren className="h-4 w-4" />Confirm activation</Button>
+      <Button variant="secondary" onClick={onCancel} className="w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">Cancel</Button>
+    </div>
+  );
+}
+
+function SosProcessingScreen({ event }: { event: SosEvent }) {
+  return (
+    <div className="space-y-5 py-5">
+      <section className="flex flex-col items-center rounded-2xl bg-[#f3f8f4] px-4 py-5 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#087443]"><LoaderCircle aria-hidden="true" className="h-8 w-8 animate-spin motion-reduce:animate-none" /></span>
+        <h2 className="mt-4 text-lg font-semibold text-[#203127]">Processing SOS request</h2>
+        <p className="mt-1 max-w-[280px] text-xs leading-5 text-[#68756c]">Recording this request in the current app session.</p>
+      </section>
+      <Panel className="space-y-4">
+        <p className="text-xs font-semibold text-[#26372c]">Activation progress</p>
+        <ContactStatus name="Local SOS event" status={`Recorded · ${event.reference}`} done />
+        <ContactStatus name="Event location" status={event.location} done={event.location !== "Unavailable"} />
+        <ContactStatus name="Contact notification" status="Not sent in this local preview" done={false} />
+      </Panel>
+      <p role="status" className="rounded-xl bg-[#edf5ef] p-3 text-center text-[11px] leading-5 text-[#526158]">Keep this screen available while the local activation result is prepared. No contact notification is being sent.</p>
+    </div>
+  );
+}
+
+function SosOutcomeScreen({ event, onStatus, onHome }: { event: SosEvent; onStatus: () => void; onHome: () => void }) {
+  return (
+    <div className="space-y-4 py-5">
+      <section className="flex flex-col items-center text-center">
+        <span className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-[#dff4e4] text-[#087443]"><CheckCircle2 className="h-9 w-9" /></span>
+        <h2 className="mt-4 text-lg font-semibold text-[#1d2d24]">SOS request activated</h2>
+        <p className="mt-1 max-w-[290px] text-xs leading-5 text-[#66736b]">The request was recorded in this app session. This local preview did not notify contacts.</p>
+      </section>
+      <Panel className="space-y-3">
+        <p className="text-xs font-semibold text-[#26372c]">Request details</p>
+        <DetailRow icon={<FileText />} label="Local reference" value={event.reference} />
+        <DetailRow icon={<CalendarDays />} label="Recorded" value={new Date(event.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
+        <DetailRow icon={<MapPin />} label="Event location" value={event.location} />
+        <p className="rounded-lg bg-[#f5f7f5] p-2.5 text-[11px] leading-4 text-[#526158]">Contact notification: not sent in this preview.</p>
+      </Panel>
+      <Button onClick={onStatus} className="w-full">View contact status<ChevronRight className="h-4 w-4" /></Button>
+      <Button onClick={onHome} variant="secondary" className="w-full">Return to Home</Button>
     </div>
   );
 }
 
 function SosSentScreen({
+  event,
   contacts,
   acknowledged,
   status,
   onAcknowledge,
   onSimulateNoAck,
-  onSecondary,
   onFailure,
   onStatusUnavailable,
   onHome,
 }: {
+  event: SosEvent;
   contacts: EmergencyContact[];
   acknowledged: boolean;
   status: string;
   onAcknowledge: () => void;
   onSimulateNoAck: () => void;
-  onSecondary: () => void;
   onFailure: () => void;
   onStatusUnavailable: () => void;
   onHome: () => void;
@@ -1894,17 +2434,19 @@ function SosSentScreen({
     <div className="space-y-4 py-6">
       <div className="flex flex-col items-center text-center">
         <span className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-[#dff4e4] text-[#087443]"><CheckCircle2 className="h-10 w-10" /></span>
-        <h2 className="mt-4 text-lg font-semibold text-[#1d2d24]">Demo request recorded</h2>
-        <p className="mt-1 text-xs text-[#66736b]">This local preview does not notify a real emergency contact.</p>
+        <h2 className="mt-4 text-lg font-semibold text-[#1d2d24]">Contact notification status</h2>
+        <p className="mt-1 text-xs text-[#66736b]">Request recorded locally; no contact notification was sent.</p>
       </div>
       <Panel className="space-y-3">
-        <p className="text-xs font-semibold text-[#26372c]">Demo request status</p>
-        <p className="rounded-lg bg-[#eff8f0] p-2.5 text-[11px] text-[#315540]">{status}</p>
-        <ContactStatus name={primary?.name ?? "Primary contact not set"} status={primary ? acknowledged ? "Acknowledgement simulated" : "Notification step simulated only" : "No primary contact configured"} done={acknowledged} />
-        {secondary && <ContactStatus name={secondary.name} status={status.includes("No acknowledgement") ? "Secondary step available" : "Not contacted"} done={false} />}
+        <p className="text-xs font-semibold text-[#26372c]">Emergency event</p>
+        <DetailRow icon={<FileText />} label="Local reference" value={event.reference} />
+        <DetailRow icon={<CalendarDays />} label="Recorded" value={new Date(event.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
+        <DetailRow icon={<MapPin />} label="Event location" value={event.location} />
+        <ContactStatus name={primary?.name ?? "Primary contact not set"} status={primary ? acknowledged ? "Acknowledgement simulated; notification not sent" : "Not notified; no backend is connected" : "No primary contact configured"} done={acknowledged} />
+        {secondary && <ContactStatus name={secondary.name} status={status.includes("No acknowledgement") ? "Escalation is not configured" : "Not notified"} done={false} />}
         <p className="border-t border-[#e5ebe6] pt-3 text-[10px] leading-4 text-[#6a786f]">No emergency services have been contacted. No assistance dispatch is claimed.</p>
       </Panel>
-      {!acknowledged && <div className="space-y-2"><Button onClick={onAcknowledge} className="w-full">Simulate primary acknowledgement</Button><Button onClick={onSimulateNoAck} variant="secondary" className="w-full">Preview no-acknowledgement status</Button>{status.includes("No acknowledgement") && secondary && <Button onClick={onSecondary} variant="quiet" className="w-full">Preview secondary contact step</Button>}</div>}
+      {!acknowledged && <div className="space-y-2"><Button onClick={onAcknowledge} className="w-full">Simulate primary acknowledgement</Button><Button onClick={onSimulateNoAck} variant="secondary" className="w-full">Preview no-acknowledgement status</Button></div>}
       <div className="grid grid-cols-2 gap-2"><button onClick={onFailure} className="rounded-lg border border-[#e1e8e2] p-2 text-[10px] text-[#58665d]">Preview not delivered</button><button onClick={onStatusUnavailable} className="rounded-lg border border-[#e1e8e2] p-2 text-[10px] text-[#58665d]">Preview status unavailable</button></div>
       <Button onClick={onHome} variant="secondary" className="w-full">Back to Home</Button>
     </div>
@@ -1946,24 +2488,465 @@ function OutcomeScreen({
   );
 }
 
-function ProfileScreen({ onContacts, onNotifications }: { onContacts: () => void; onNotifications: () => void }) {
+function ProfileScreen({
+  profile,
+  contactCount,
+  saved,
+  onDismissSaved,
+  onContacts,
+  onEdit,
+  onSettings,
+  onRestartSession,
+}: {
+  profile: StaffProfile;
+  contactCount: number;
+  saved: boolean;
+  onDismissSaved: () => void;
+  onContacts: () => void;
+  onEdit: () => void;
+  onSettings: () => void;
+  onRestartSession: () => void;
+}) {
+  const initials = profile.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   return (
-    <div className="space-y-4 py-4">
-      <Panel className="flex items-center gap-3">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#b9e8c6] text-lg font-semibold text-[#0c5934]">M</span>
-        <span><span className="block text-sm font-semibold text-[#1e3025]">Mike Kanu</span><span className="text-[11px] text-[#6d7b72]">mike.kanu@nsia.example</span></span>
-      </Panel>
-      <div className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
-        <div className="flex items-center gap-3 border-b border-[#edf1ed] p-3"><UserRound className="h-[18px] w-[18px] text-[#3d5a49]" /><span><span className="block text-xs font-medium text-[#26372c]">Personal information</span><span className="mt-0.5 block text-[10px] text-[#758178]">NSIA staff member</span></span></div>
-        <button onClick={onContacts} className="flex w-full items-center gap-3 border-b border-[#edf1ed] p-3 text-left">
-          <Phone className="h-[18px] w-[18px] text-[#3d5a49]" /><span className="min-w-0 flex-1"><span className="block text-xs font-medium text-[#26372c]">Emergency contacts</span><span className="mt-0.5 block text-[10px] text-[#758178]">Manage your contacts</span></span><ChevronRight className="h-4 w-4 text-[#819087]" />
+    <div className="space-y-3 py-3">
+      {saved && <div role="status" className="flex items-center justify-between rounded-xl border border-[#d9ebdd] bg-[#eff8f0] px-3 py-2 text-xs text-[#20583a]">
+        <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />Profile details saved for this session.</span>
+        <button onClick={onDismissSaved} aria-label="Dismiss saved message" className="rounded p-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]"><X className="h-4 w-4" /></button>
+      </div>}
+      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {profile.profilePhoto
+            ? <Image unoptimized src={profile.profilePhoto} alt={`${profile.fullName} profile`} width={56} height={56} className="h-14 w-14 shrink-0 rounded-full object-cover" />
+            : <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#e8f5eb] text-lg font-semibold text-[#087443]">{initials || <UserRound className="h-6 w-6" />}</span>}
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-[#18231d]">{profile.fullName}</h2>
+            <p className="mt-0.5 text-xs text-[#66736b]">{profile.role} · {profile.department}</p>
+            <p className="mt-1 break-all text-xs text-[#66736b]">{profile.organizationEmail}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex items-start gap-2 border-t border-[#edf1ed] pt-3 text-xs text-[#52645a]">
+          <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />
+          <span>Example staff information. Organization details are managed by NSIA and are read-only.</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#edf1ed] pt-3">
+          <div className="min-w-0"><p className="text-[11px] text-[#66736b]">Employee ID</p><p className="mt-0.5 truncate text-xs font-medium text-[#26372c]">{profile.employeeId}</p></div>
+          <div className="min-w-0"><p className="text-[11px] text-[#66736b]">Department</p><p className="mt-0.5 truncate text-xs font-medium text-[#26372c]">{profile.department}</p></div>
+        </div>
+      </section>
+      <section aria-label="Profile actions" className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
+        <ProfileAction icon={ContactRound} title="Emergency contacts" description={contactCount > 0 ? `${contactCount} contacts on file` : "Complete your emergency contacts"} onClick={onContacts} />
+        <ProfileAction icon={Pencil} title="Edit profile" description="Update personal contact details" onClick={onEdit} />
+        <ProfileAction icon={Settings} title="Settings" description="Preferences, permissions and app information" onClick={onSettings} last />
+      </section>
+      <button onClick={onRestartSession} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#eff7e9] px-4 py-2.5 text-sm font-semibold text-[#087443] hover:bg-[#e7f2df] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">
+        <RotateCcw className="h-4 w-4" />Start fresh session
+      </button>
+      <p className="text-center text-[11px] text-[#829087]">Example profile for demonstration.</p>
+    </div>
+  );
+}
+
+function ProfileAction({
+  icon: Icon,
+  title,
+  description,
+  onClick,
+  last = false,
+}: {
+  icon: typeof Home;
+  title: string;
+  description: string;
+  onClick: () => void;
+  last?: boolean;
+}) {
+  return (
+    <button onClick={onClick} className={`flex min-h-[64px] w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-[#f8faf8] focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#087443] ${last ? "" : "border-b border-[#edf1ed]"}`}>
+      <Icon className="h-5 w-5 shrink-0 text-[#087443]" strokeWidth={1.9} />
+      <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium text-[#18231d]">{title}</span><span className="mt-0.5 block truncate text-xs text-[#66736b]">{description}</span></span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-[#819087]" />
+    </button>
+  );
+}
+
+function EditProfileScreen({
+  profile,
+  onCancel,
+  onSave,
+}: {
+  profile: StaffProfile;
+  onCancel: () => void;
+  onSave: (profile: StaffProfile) => void;
+}) {
+  const [phone, setPhone] = useState(profile.phone);
+  const [personalEmail, setPersonalEmail] = useState(profile.personalEmail);
+  const [bloodGroup, setBloodGroup] = useState(profile.bloodGroup ?? "");
+  const [genotype, setGenotype] = useState(profile.genotype ?? "");
+  const [gender, setGender] = useState(profile.gender ?? "");
+  const [dateOfBirth, setDateOfBirth] = useState(profile.dateOfBirth ?? "");
+  const [emergencyMedicalNotes, setEmergencyMedicalNotes] = useState(profile.emergencyMedicalNotes ?? "");
+  const [profilePhoto, setProfilePhoto] = useState(profile.profilePhoto ?? "");
+  const [errors, setErrors] = useState<{ phone?: string; personalEmail?: string; profilePhoto?: string }>({});
+  const [saving, setSaving] = useState(false);
+  const photoInput = useRef<HTMLInputElement>(null);
+  const isDirty = phone !== profile.phone
+    || personalEmail !== profile.personalEmail
+    || bloodGroup !== (profile.bloodGroup ?? "")
+    || genotype !== (profile.genotype ?? "")
+    || gender !== (profile.gender ?? "")
+    || dateOfBirth !== (profile.dateOfBirth ?? "")
+    || emergencyMedicalNotes !== (profile.emergencyMedicalNotes ?? "")
+    || profilePhoto !== (profile.profilePhoto ?? "");
+  const initials = profile.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+
+  function cancel() {
+    if (isDirty && !window.confirm("Discard your unsaved profile changes?")) return;
+    onCancel();
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextErrors: { phone?: string; personalEmail?: string } = {};
+    if (!phone.trim()) nextErrors.phone = "Enter a phone number.";
+    else if (!/^\+?[0-9 ()-]{7,20}$/.test(phone.trim())) nextErrors.phone = "Enter a valid phone number.";
+    if (personalEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalEmail.trim())) {
+      nextErrors.personalEmail = "Enter a valid email address.";
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+
+    setSaving(true);
+    window.setTimeout(() => onSave({
+      ...profile,
+      phone: phone.trim(),
+      personalEmail: personalEmail.trim(),
+      bloodGroup,
+      genotype,
+      gender,
+      dateOfBirth,
+      emergencyMedicalNotes: emergencyMedicalNotes.trim(),
+      profilePhoto: profilePhoto || undefined,
+    }), 350);
+  }
+
+  function selectPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setErrors((previous) => ({ ...previous, profilePhoto: "Choose an image file." }));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors((previous) => ({ ...previous, profilePhoto: "Choose an image smaller than 5 MB." }));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        setErrors((previous) => ({ ...previous, profilePhoto: "The selected image could not be loaded." }));
+        return;
+      }
+      setProfilePhoto(reader.result);
+      setErrors((previous) => ({ ...previous, profilePhoto: undefined }));
+    };
+    reader.onerror = () => {
+      setErrors((previous) => ({ ...previous, profilePhoto: "The selected image could not be loaded." }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3 py-3">
+      <section className="flex items-center gap-4 rounded-2xl border border-[#e1e8e2] bg-white p-3.5">
+        <div className="relative shrink-0">
+          {profilePhoto
+            ? <Image unoptimized src={profilePhoto} alt={`${profile.fullName} profile`} width={88} height={88} className="h-[88px] w-[88px] rounded-full object-cover" />
+            : <span className="flex h-[88px] w-[88px] items-center justify-center rounded-full bg-[#e8edf1] text-xl font-semibold text-[#087443]">{initials || <UserRound className="h-7 w-7" />}</span>}
+          <span className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#087443] text-white"><Camera className="h-4 w-4" /></span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold text-[#19342f]">Profile photo</h2>
+          <p className="mt-1 text-xs text-[#718078]">Use a clear photo of yourself.</p>
+          <input ref={photoInput} type="file" accept="image/*" className="sr-only" onChange={selectPhoto} aria-label="Choose profile photo" />
+          <button type="button" onClick={() => photoInput.current?.click()} disabled={saving} className="mt-2.5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#eff8e9] px-3.5 text-xs font-semibold text-[#087443] hover:bg-[#e6f3dc] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">
+            <Camera className="h-4 w-4" />Change photo
+          </button>
+          {errors.profilePhoto && <p role="alert" className="mt-1 text-[11px] text-[#b42318]">{errors.profilePhoto}</p>}
+        </div>
+      </section>
+      <section className="rounded-2xl bg-[#f0f7ec] p-3.5">
+        <div className="flex items-start gap-2.5">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#087443]"><LockKeyhole className="h-5 w-5" /></span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-[#19342f]">Organization details</h2>
+            <p className="mt-0.5 text-xs leading-4 text-[#718078]">Managed by NSIA; contact your administrator to update these details.</p>
+          </div>
+        </div>
+        <div className="mt-3 rounded-2xl bg-white/80 px-3.5">
+          <ReadOnlyProfileField label="Full name" value={profile.fullName} />
+          <ReadOnlyProfileField label="Employee ID" value={profile.employeeId} />
+          <ReadOnlyProfileField label="Department" value={profile.department} />
+          <ReadOnlyProfileField label="Role" value={profile.role} />
+          <ReadOnlyProfileField label="Work email" value={profile.organizationEmail} />
+        </div>
+      </section>
+      <section className="space-y-3 rounded-2xl border border-[#e1e8e2] bg-white p-3.5">
+        <h2 className="flex items-center gap-2.5 text-sm font-semibold text-[#19342f]"><UserRound className="h-5 w-5 text-[#087443]" />Personal and emergency information</h2>
+        <ProfileInputField label="Phone number" required error={errors.phone} icon={Phone}>
+          <input type="tel" autoComplete="tel" value={phone} onChange={(event) => { setPhone(event.target.value); setErrors((previous) => ({ ...previous, phone: undefined })); }} className={profileInputClass(Boolean(errors.phone))} />
+        </ProfileInputField>
+        <ProfileInputField label="Personal email (optional)" error={errors.personalEmail} icon={Mail}>
+          <input type="email" autoComplete="email" value={personalEmail} onChange={(event) => { setPersonalEmail(event.target.value); setErrors((previous) => ({ ...previous, personalEmail: undefined })); }} className={profileInputClass(Boolean(errors.personalEmail))} />
+        </ProfileInputField>
+        <div className="grid grid-cols-2 gap-2.5">
+          <ProfileInputField label="Blood group" icon={Droplet}>
+            <select value={bloodGroup} onChange={(event) => setBloodGroup(event.target.value)} className={profileInputClass()}>
+              <option value="">Select blood group</option>
+              {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((value) => <option key={value}>{value}</option>)}
+            </select>
+          </ProfileInputField>
+          <ProfileInputField label="Genotype" icon={Dna}>
+            <select value={genotype} onChange={(event) => setGenotype(event.target.value)} className={profileInputClass()}>
+              <option value="">Select genotype</option>
+              {["AA", "AS", "SS", "AC", "SC"].map((value) => <option key={value}>{value}</option>)}
+            </select>
+          </ProfileInputField>
+          <ProfileInputField label="Gender" icon={UserRound}>
+            <select value={gender} onChange={(event) => setGender(event.target.value)} className={profileInputClass()}>
+              <option value="">Select gender</option>
+              {["Female", "Male", "Prefer not to say"].map((value) => <option key={value}>{value}</option>)}
+            </select>
+          </ProfileInputField>
+          <ProfileInputField label="Date of birth" icon={CalendarDays}>
+            <input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} className={profileInputClass()} />
+          </ProfileInputField>
+        </div>
+        <label className="block">
+          <span className="mb-1.5 block text-[13px] font-medium text-[#24352b]">Emergency medical notes (optional)</span>
+          <span className="relative block">
+            <FileText className="absolute left-3 top-3.5 h-4 w-4 text-[#52645a]" />
+            <textarea value={emergencyMedicalNotes} onChange={(event) => setEmergencyMedicalNotes(event.target.value.slice(0, 500))} maxLength={500} rows={3} placeholder="Only include information relevant to emergency care." className={`${profileInputClass()} min-h-[84px] resize-y py-3 pl-10`} />
+          </span>
+          <span className="mt-1 block text-right text-[10px] text-[#718078]">{emergencyMedicalNotes.length}/500</span>
+        </label>
+        <p className="text-[10px] leading-4 text-[#718078]">Personal and medical details are held only in this app session.</p>
+        <div className="space-y-2 border-t border-[#edf1ed] pt-3">
+          <Button type="submit" disabled={saving} className="w-full rounded-xl bg-[#087443]">{saving ? <><LoaderCircle className="h-4 w-4 animate-spin" />Saving changes</> : "Save changes"}</Button>
+          <Button variant="quiet" onClick={cancel} disabled={saving} className="w-full">Cancel</Button>
+        </div>
+      </section>
+    </form>
+  );
+}
+
+function ReadOnlyProfileField({ label, value }: { label: string; value: string }) {
+  return <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.5fr)] items-center gap-3 border-b border-[#e9eeea] py-2.5 last:border-b-0">
+    <span className="text-xs text-[#66736b]">{label}</span>
+    <span className="min-w-0 break-all text-xs font-medium text-[#35463c]">{value}</span>
+  </div>;
+}
+
+function ProfileInputField({ label, required, error, icon: Icon, children }: {
+  label: string;
+  required?: boolean;
+  error?: string;
+  icon: typeof Home;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="mb-1.5 block text-[13px] font-medium text-[#24352b]">{label}{required && <span className="ml-1 text-[#c03228]">*</span>}</span>
+      <span className="relative block">
+        <Icon aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#52645a]" />
+        {children}
+      </span>
+      {error && <span role="alert" className="mt-1 block text-xs text-[#b42318]">{error}</span>}
+    </label>
+  );
+}
+
+function profileInputClass(error = false) {
+  return `h-[50px] w-full min-w-0 rounded-xl border ${error ? "border-[#d92d20]" : "border-[#dfe7e0]"} bg-white py-2.5 pl-10 pr-2 text-xs text-[#35463c] placeholder:text-[#a0aaa3] focus:border-[#087443] focus:outline-none focus:ring-2 focus:ring-[#087443]/15`;
+}
+
+function SettingsScreen({
+  onNotifications,
+  onPermissions,
+  onOpenInfo,
+}: {
+  onNotifications: () => void;
+  onPermissions: () => void;
+  onOpenInfo: (title: string, description: string) => void;
+}) {
+  return (
+    <div className="space-y-4 py-3">
+      <section aria-label="Settings" className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
+        <ProfileAction icon={Bell} title="Notification settings" description="Manage alert and update preferences" onClick={onNotifications} />
+        <ProfileAction icon={ShieldCheck} title="Permissions" description="Location, camera and device access" onClick={onPermissions} />
+        <ProfileAction icon={FileText} title="Privacy & terms" description="How ICE uses your information" onClick={() => onOpenInfo("Privacy & terms", "Privacy information and terms are not available in this app yet.")} />
+        <ProfileAction icon={CircleHelp} title="Help & support" description="Guidance and contact information" onClick={() => onOpenInfo("Help & support", "Help and support information is not available in this app yet.")} />
+        <ProfileAction icon={LockKeyhole} title="Security & sign-in" description="Organization account and session" onClick={() => onOpenInfo("Security & sign-in", "Account security options are not available in this app yet. Sign-in is currently a visual flow only.")} last />
+      </section>
+      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-3">
+        <div className="flex items-center gap-2 text-xs font-semibold text-[#35463c]"><Info className="h-4 w-4 text-[#087443]" />App information</div>
+        <div className="mt-3 flex items-center justify-between text-xs"><span className="text-[#66736b]">Application</span><span className="font-medium text-[#35463c]">ICE</span></div>
+        <div className="mt-2 flex items-center justify-between text-xs"><span className="text-[#66736b]">Version</span><span className="font-medium text-[#35463c]">2.0</span></div>
+      </section>
+    </div>
+  );
+}
+
+function NotificationSettingsScreen({
+  preferences,
+  onChange,
+}: {
+  preferences: NotificationPreferences;
+  onChange: (preferences: NotificationPreferences) => void;
+}) {
+  const [pushPermission, setPushPermission] = useState<PushPermission>("checking");
+  const [showPermissionHelp, setShowPermissionHelp] = useState(false);
+
+  useEffect(() => {
+    const updatePermission = () => {
+      if (!("Notification" in window)) {
+        setPushPermission("unavailable");
+        return;
+      }
+      setPushPermission(window.Notification.permission);
+    };
+    const timer = window.setTimeout(updatePermission, 0);
+    window.addEventListener("focus", updatePermission);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", updatePermission);
+    };
+  }, []);
+
+  const pushStatus: Record<PushPermission, string> = {
+    checking: "Checking device permission",
+    granted: "Allowed by browser",
+    denied: "Blocked by browser",
+    default: "Not yet allowed",
+    unavailable: "Not available in this browser",
+  };
+
+  return (
+    <div className="space-y-4 py-3">
+      <p className="text-sm font-semibold text-[#18231d]">Choose how ICE keeps you informed</p>
+      <section className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
+        <div className="border-b border-[#edf1ed] bg-[#fffaf1] p-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#b42318]" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2"><h2 className="text-[13px] font-semibold text-[#18231d]">Critical safety alerts</h2><StatusPill tone="amber">Required</StatusPill></div>
+              <p className="mt-1 text-xs leading-4 text-[#66736b]">High-risk alerts remain enabled under organization policy.</p>
+            </div>
+            <LockKeyhole aria-label="Required and locked" className="mt-0.5 h-4 w-4 shrink-0 text-[#66736b]" />
+          </div>
+        </div>
+        <NotificationToggleRow title="Incident updates" description="Updates on your reports and ongoing situations." checked={preferences.incidentUpdates} onChange={(checked) => onChange({ ...preferences, incidentUpdates: checked })} />
+        <NotificationToggleRow title="General safety information" description="Safety tips and awareness messages." checked={preferences.safetyInformation} onChange={(checked) => onChange({ ...preferences, safetyInformation: checked })} />
+        <div className="flex items-center gap-3 border-t border-[#edf1ed] p-3">
+          <BellRing className="h-5 w-5 shrink-0 text-[#087443]" />
+          <div className="min-w-0 flex-1"><p className="text-[13px] font-medium text-[#18231d]">System notices</p><p className="mt-0.5 text-xs text-[#66736b]">Important app updates and service announcements.</p></div>
+          <span className="text-xs font-medium text-[#087443]">On</span>
+        </div>
+      </section>
+      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-3">
+        <div className="flex items-start gap-3">
+          <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[13px] font-semibold text-[#18231d]">Device push notifications</h2>
+            <p className="mt-1 text-xs text-[#66736b]">{pushStatus[pushPermission]}</p>
+          </div>
+          {pushPermission === "granted" && <CheckCircle2 aria-label="Permission allowed" className="h-4 w-4 shrink-0 text-[#087443]" />}
+        </div>
+        <p className="mt-2 text-xs leading-4 text-[#66736b]">Your device or browser controls this permission. ICE push delivery is not configured here.</p>
+        <button type="button" aria-expanded={showPermissionHelp} onClick={() => setShowPermissionHelp((value) => !value)} className="mt-2 min-h-10 rounded-lg px-2 text-xs font-semibold text-[#087443] hover:bg-[#f1f7f2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">
+          {showPermissionHelp ? "Hide permission help" : "How to change device permission"}
         </button>
-        <button onClick={onNotifications} className="flex w-full items-center gap-3 border-b border-[#edf1ed] p-3 text-left">
-          <Bell className="h-[18px] w-[18px] text-[#3d5a49]" /><span className="min-w-0 flex-1"><span className="block text-xs font-medium text-[#26372c]">Notifications</span><span className="mt-0.5 block text-[10px] text-[#758178]">View notification history</span></span><ChevronRight className="h-4 w-4 text-[#819087]" />
-        </button>
-        <div className="flex items-center gap-3 p-3"><Info className="h-[18px] w-[18px] text-[#3d5a49]" /><span><span className="block text-xs font-medium text-[#26372c]">App settings</span><span className="mt-0.5 block text-[10px] text-[#758178]">ICE 2.0 · Prototype</span></span></div>
-      </div>
-      <p className="text-center text-[10px] text-[#829087]">Prototype profile. No production identity session is active.</p>
+        {showPermissionHelp && <p className="rounded-lg bg-[#f1f7f2] p-2.5 text-xs leading-4 text-[#52645a]">Open this site&apos;s settings from your browser or device notification controls to change permission. This app cannot change operating-system settings.</p>}
+      </section>
+      <p className="flex items-start gap-2 text-xs leading-4 text-[#52645a]"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />Critical safety alerts are required and cannot be turned off here.</p>
+    </div>
+  );
+}
+
+function NotificationToggleRow({
+  title,
+  description,
+  checked,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex min-h-[68px] cursor-pointer items-center gap-3 border-b border-[#edf1ed] p-3 last:border-b-0">
+      <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium text-[#18231d]">{title}</span><span className="mt-0.5 block text-xs leading-4 text-[#66736b]">{description}</span></span>
+      <input type="checkbox" role="switch" checked={checked} onChange={(event) => onChange(event.target.checked)} aria-label={title} className="peer sr-only" />
+      <span aria-hidden="true" className="relative h-6 w-11 shrink-0 rounded-full bg-[#cbd4cd] transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:bg-[#087443] peer-checked:after:translate-x-5 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#087443]" />
+    </label>
+  );
+}
+
+function PermissionsScreen() {
+  const [locationPermission, setLocationPermission] = useState<"checking" | "granted" | "denied" | "prompt" | "unavailable">("checking");
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(() => {
+      if (!navigator.permissions) {
+        setLocationPermission("unavailable");
+        return;
+      }
+      void navigator.permissions.query({ name: "geolocation" })
+        .then((permission) => {
+          if (active) setLocationPermission(permission.state);
+        })
+        .catch(() => {
+          if (active) setLocationPermission("unavailable");
+        });
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  const locationStatus: Record<typeof locationPermission, string> = {
+    checking: "Checking browser permission",
+    granted: "Allowed in browser",
+    denied: "Blocked in browser",
+    prompt: "Not yet allowed",
+    unavailable: "Browser permission status unavailable",
+  };
+
+  return (
+    <div className="space-y-3 py-3">
+      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-4">
+        <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-[#087443]" /><h2 className="text-sm font-semibold text-[#18231d]">Device permissions</h2></div>
+        <div className="mt-4 flex items-center gap-3 border-t border-[#edf1ed] pt-3">
+          <MapPin className="h-5 w-5 shrink-0 text-[#087443]" />
+          <div className="min-w-0 flex-1"><p className="text-[13px] font-medium text-[#18231d]">Location</p><p aria-live="polite" className="mt-0.5 text-xs text-[#66736b]">{locationStatus[locationPermission]}</p></div>
+        </div>
+        <p className="mt-2 pl-8 text-xs leading-4 text-[#66736b]">ICE currently uses a demonstration location and does not request your location.</p>
+        <p className="mt-3 text-xs leading-5 text-[#66736b]">Permissions are controlled by your browser or device. ICE does not currently request location or camera access.</p>
+        <p className="mt-2 text-xs leading-5 text-[#66736b]">You can review or change permissions in your browser&apos;s site settings.</p>
+      </section>
+    </div>
+  );
+}
+
+function SettingsInfoScreen({ description }: { description: string }) {
+  return (
+    <div className="py-3">
+      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-4">
+        <p className="text-sm leading-6 text-[#52645a]">{description}</p>
+      </section>
     </div>
   );
 }
@@ -1981,7 +2964,7 @@ function ContactsScreen({
 }) {
   return (
     <div className="space-y-3 py-4">
-      <Panel className="flex items-start gap-2.5 bg-[#eff8f0] p-3 text-[11px] leading-4 text-[#52645a]"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p>Emergency contacts are stored in this prototype session. Contacts do not need an ICE account.</p></Panel>
+      <Panel className="flex items-start gap-2.5 bg-[#eff8f0] p-3 text-[11px] leading-4 text-[#52645a]"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p>Emergency contacts are stored in this app session. Contacts do not need an ICE account.</p></Panel>
       {contacts.map((contact) => <Panel key={contact.id} className="flex items-center gap-3 p-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e8f5eb] text-[#087443]"><UserRound className="h-5 w-5" /></span>
         <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-[#26372c]">{contact.name}</span><StatusPill>{contact.priority}</StatusPill></span><span className="mt-1 block text-[10px] text-[#758178]">{contact.relationship}</span><span className="mt-1 block text-[10px] text-[#526158]">{contact.phone}</span></span>
@@ -2025,65 +3008,35 @@ function ContactForm({
   );
 }
 
-function LoginWelcomeScreen({ onLogin }: { onLogin: () => void }) {
+function MicrosoftSignInScreen({ onContinue }: { onContinue: () => void }) {
   return (
     <section
-      className="relative flex min-h-full flex-col justify-between overflow-hidden bg-cover bg-center px-6 pb-[calc(24px+env(safe-area-inset-bottom))] pt-[calc(28px+env(safe-area-inset-top))] text-white"
+      className="relative flex min-h-full flex-col justify-between overflow-hidden bg-cover bg-center px-6 pb-[calc(16px+env(safe-area-inset-bottom))] pt-[calc(28px+env(safe-area-inset-top))] text-white"
       style={{ backgroundImage: "url('/images/bg%20image%20nsia.png')" }}
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/5 to-black/70" aria-hidden="true" />
-      <div className="relative z-10 flex justify-center">
-        <Image
-          src="/images/ice-logo-removed-bg.png"
-          alt="ICE"
-          width={144}
-          height={144}
-          priority
-          className="h-auto w-[min(144px,40vw)] object-contain"
-        />
-      </div>
-      <div className="relative z-10 pb-3">
-        <h1 className="max-w-[320px] text-[32px] font-bold leading-[1.12] tracking-[-0.04em]">In Case of Emergency</h1>
-        <p className="mt-3 max-w-[330px] text-[15px] leading-6 text-white/95">ICE helps you report incidents, receive important alerts, and access security information.</p>
-        <button
-          onClick={onLogin}
-          className="mt-7 flex h-14 w-full items-center justify-center rounded-2xl bg-[#08743d] px-5 text-[16px] font-semibold text-white shadow-lg shadow-black/15 transition-colors hover:bg-[#006838] focus-visible:outline-white"
-        >
-          Login to ICE
-        </button>
-        <p className="mt-3 text-center text-xs text-white/85">Access using your NSIA organizational account</p>
-      </div>
-    </section>
-  );
-}
-
-function MicrosoftSignInScreen({ onBack, onContinue }: { onBack: () => void; onContinue: () => void }) {
-  return (
-    <section className="flex min-h-full flex-col bg-[#f8faf8] px-6 pb-[calc(24px+env(safe-area-inset-bottom))] pt-[calc(20px+env(safe-area-inset-top))]">
-      <button onClick={onBack} aria-label="Back to welcome" className="flex h-11 w-11 items-center justify-center rounded-full text-[#294435] hover:bg-[#edf2ee]">
-        <ArrowLeft className="h-5 w-5" />
-      </button>
-      <div className="flex flex-1 flex-col items-center justify-center py-8 text-center">
+      <div className="absolute inset-0 bg-gradient-to-b from-[#062b1d]/45 via-[#063b27]/55 to-[#031b12]/90" aria-hidden="true" />
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center py-8 text-center">
         <Image
           src="/images/ice-logo-removed-bg.png"
           alt="ICE"
           width={88}
           height={88}
-          className="h-auto w-[88px] object-contain"
+          priority
+          className="h-auto w-[min(120px,32vw)] object-contain"
         />
-        <h1 className="mt-10 text-[26px] font-semibold tracking-[-0.03em] text-[#18231d]">Sign in with Microsoft</h1>
-        <p className="mt-3 max-w-[300px] text-[15px] leading-6 text-[#66736b]">Use your NSIA organizational account to continue to ICE.</p>
+        <h1 className="mt-8 text-[28px] font-semibold tracking-[-0.03em] text-white">Sign in to ICE</h1>
+        <p className="mt-3 max-w-[300px] text-sm leading-6 text-white/90">Continue with your NSIA organizational account.</p>
         <button
           onClick={onContinue}
-          className="mt-8 flex min-h-[56px] w-full items-center gap-3 rounded-2xl border border-[#dce5de] bg-white px-4 text-left text-[15px] font-semibold text-[#26372c] shadow-sm transition-colors hover:bg-[#f7faf7]"
+          className="mt-8 flex min-h-[56px] w-full items-center gap-3 rounded-2xl bg-white px-4 text-left text-[15px] font-semibold text-[#26372c] shadow-lg shadow-black/20 transition-colors hover:bg-[#f2f7f3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           <MicrosoftMark />
-          <span className="flex-1 text-center">Sign in with Microsoft</span>
+          <span className="flex-1 text-center">Continue with Microsoft</span>
           <ChevronRight className="h-4 w-4 text-[#718078]" />
         </button>
-        <p className="mt-5 max-w-[300px] text-[12px] leading-5 text-[#718078]">Prototype sign-in only. No organizational account is being authenticated.</p>
+        <p className="mt-5 max-w-[300px] text-xs leading-5 text-white/85">Sign-in is a visual flow only. No organizational account is being authenticated.</p>
       </div>
-      <p className="px-2 text-center text-[13px] leading-5 text-[#66736b]">Only authorized NSIA staff can access ICE.</p>
+      <p className="relative z-10 pt-3 text-center text-xs font-medium tracking-wide text-white/90">Powered by Techspecialist</p>
     </section>
   );
 }
@@ -2096,35 +3049,5 @@ function MicrosoftMark() {
       <path fill="#00a4ef" d="M1 13h10v10H1z" />
       <path fill="#ffb900" d="M13 13h10v10H13z" />
     </svg>
-  );
-}
-
-function FirstLoginWelcomeModal({ onDismiss }: { onDismiss: () => void }) {
-  return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#14231a]/60 px-5 py-6">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="first-login-title"
-        aria-describedby="first-login-description"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onDismiss();
-          } else if (event.key === "Tab") {
-            event.preventDefault();
-            event.currentTarget.querySelector("button")?.focus();
-          }
-        }}
-        className="w-full max-w-[340px] rounded-[26px] bg-white p-6 text-center shadow-[0_18px_60px_rgba(0,0,0,0.2)]"
-      >
-        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e8f5eb] text-[#08743d]">
-          <ShieldCheck className="h-7 w-7" />
-        </span>
-        <h2 id="first-login-title" className="mt-5 text-xl font-semibold text-[#18231d]">Welcome to ICE</h2>
-        <p id="first-login-description" className="mt-3 text-sm leading-6 text-[#66736b]">Your safety matters. Report incidents, stay informed with important alerts, and access trusted security information—all in one place.</p>
-        <Button autoFocus onClick={onDismiss} className="mt-6 w-full">Get started</Button>
-      </section>
-    </div>
   );
 }
