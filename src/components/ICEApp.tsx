@@ -39,7 +39,6 @@ import {
   Search,
   Settings,
   Send,
-  ShieldAlert,
   Smartphone,
   ShieldCheck,
   Siren,
@@ -106,7 +105,8 @@ type Screen =
   | "contacts"
   | "contactEdit"
   | "signIn"
-  | "signInLoading";
+  | "signInLoading"
+  | "firstLoginWelcome";
 
 type IncidentCategory = {
   id: string;
@@ -143,7 +143,7 @@ type Report = {
   status: "Submitted" | "In progress" | "Resolved";
   history: string[];
   evidence: string[];
-  supplementaryInformation: { id: string; text: string; createdAt: string }[];
+  supplementaryInformation: { id: string; text: string; createdAt: string; attachments?: string[] }[];
 };
 
 type ReportListEntry = Pick<Report, "id" | "createdAt" | "category" | "summary" | "location" | "dateTime" | "status"> & {
@@ -164,6 +164,15 @@ type QuickReport = {
   description: string;
   dateTime: string;
   evidence: { key: string; name: string; type: string; previewUrl?: string }[];
+  timeline: QuickReportTimelineEvent[];
+};
+
+type QuickReportTimelineEvent = {
+  id: string;
+  title: string;
+  description: string;
+  createdAt: string;
+  status: "complete" | "in_progress" | "failed";
 };
 
 type Alert = {
@@ -254,7 +263,7 @@ const initialStaffProfile: StaffProfile = {
 
 const tabs: { id: Tab; label: string; icon: typeof Home }[] = [
   { id: "home", label: "Home", icon: Home },
-  { id: "alerts", label: "Alerts", icon: ShieldAlert },
+  { id: "alerts", label: "Alerts", icon: AlertTriangle },
   { id: "report", label: "Reports", icon: ClipboardList },
   { id: "profile", label: "Profile", icon: UserRound },
 ];
@@ -394,9 +403,9 @@ const screenTitles: Partial<Record<Screen, string>> = {
   reportFailure: "Submission unavailable",
   reports: "My Reports",
   reportsUnavailable: "My Reports",
-  reportDetail: "Report details",
-  reportHistory: "Status history",
-  supplementaryInformation: "Supplementary information",
+  reportDetail: "Report Details",
+  reportHistory: "Report Timeline",
+  supplementaryInformation: "Supplementary Information",
   supplementSubmitting: "Sending information",
   supplementSuccess: "Information added",
   supplementFailure: "Submission unavailable",
@@ -589,6 +598,7 @@ export default function ICEApp() {
   const [contactError, setContactError] = useState("");
   const [reportSearch, setReportSearch] = useState("");
   const [supplementText, setSupplementText] = useState("");
+  const [supplementFiles, setSupplementFiles] = useState<File[]>([]);
   const [supplementError, setSupplementError] = useState("");
   const [supplementFailurePreview, setSupplementFailurePreview] = useState(false);
   const [supplementSaving, setSupplementSaving] = useState(false);
@@ -729,7 +739,17 @@ export default function ICEApp() {
     const previousAttempt = retryKey ? quickReports.find((report) => report.key === retryKey) : undefined;
     const category = categoryFor(categoryId);
     const quickReport: QuickReport = previousAttempt
-      ? { ...previousAttempt, sendStatus: "sending" }
+      ? {
+          ...previousAttempt,
+          sendStatus: "sending",
+          timeline: [...(previousAttempt.timeline ?? []), {
+            id: `quick-timeline-${Date.now()}-retry`,
+            title: "Retry started",
+            description: "Retrying the same quick-report event.",
+            createdAt: new Date().toISOString(),
+            status: "in_progress",
+          }],
+        }
       : {
           key: `quick-${Date.now()}-${++quickEventSequence.current}`,
           categoryId: category.id,
@@ -743,6 +763,7 @@ export default function ICEApp() {
           description: "",
           dateTime: toLocalDateTime(new Date().toISOString()),
           evidence: [],
+          timeline: [],
         };
     quickSendLock.current = true;
     setQuickReports((previous) => previousAttempt
@@ -753,11 +774,21 @@ export default function ICEApp() {
       const sequence = failed ? undefined : ++quickReferenceSequence.current;
       const now = new Date(quickReport.createdAt);
       const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+      const completedAt = new Date().toISOString();
       setQuickReports((previous) => previous.map((report) => report.key === quickReport.key
         ? {
             ...report,
             sendStatus: failed ? "failed" : "sent",
-            reference: failed ? undefined : `QR-${date}-${String(sequence).padStart(3, "0")}`,
+            reference: failed ? report.reference : report.reference ?? `QR-${date}-${String(sequence).padStart(3, "0")}`,
+            timeline: [...(report.timeline ?? []), {
+              id: `quick-timeline-${Date.now()}-result`,
+              title: failed ? "Submission failed" : "Quick report sent",
+              description: failed
+                ? "The local submission could not be completed. Retry to attempt this same event again."
+                : "The quick report was recorded in this local demonstration.",
+              createdAt: completedAt,
+              status: failed ? "failed" : "complete",
+            }],
           }
         : report));
       quickSendLock.current = false;
@@ -789,8 +820,20 @@ export default function ICEApp() {
     quickSaveLock.current = true;
     setQuickDetailsSaving(true);
     window.setTimeout(() => {
+      const completedAt = new Date().toISOString();
       setQuickReports((previous) => previous.map((item) => item.key === report.key
-        ? { ...item, category: categoryFor(item.categoryId).label, detailStatus: "completed" }
+        ? {
+            ...item,
+            category: categoryFor(item.categoryId).label,
+            detailStatus: "completed",
+            timeline: [...(item.timeline ?? []), {
+              id: `quick-timeline-${Date.now()}-details`,
+              title: "Incident details added",
+              description: "Additional incident information was added to this quick report.",
+              createdAt: completedAt,
+              status: "complete",
+            }],
+          }
         : item));
       setQuickDetailsSaving(false);
       quickSaveLock.current = false;
@@ -852,6 +895,13 @@ export default function ICEApp() {
               dateTime: draft.dateTime,
               evidence: draft.evidence.map(({ id, file, preview }) => ({ key: id, name: file.name, type: file.type, previewUrl: preview })),
               detailStatus: "completed",
+              timeline: [...(report.timeline ?? []), {
+                id: `quick-timeline-${Date.now()}-details`,
+                title: "Incident details added",
+                description: "Additional incident information was added to this quick report.",
+                createdAt: new Date().toISOString(),
+                status: "complete",
+              }],
             }
           : report));
         setScreenStack([]);
@@ -966,8 +1016,14 @@ export default function ICEApp() {
     window.setTimeout(() => {
       setScreenStack([]);
       setActiveTab("home");
-      setScreen("home");
+      setScreen("firstLoginWelcome");
     }, 700);
+  }
+
+  function completeFirstLoginWelcome() {
+    setScreenStack([]);
+    setActiveTab("home");
+    setScreen("home");
   }
 
   function submitSupplementaryInformation() {
@@ -989,11 +1045,12 @@ export default function ICEApp() {
         setScreen("supplementFailure");
         return;
       }
-      const entry = { id: `supp-${Date.now()}`, text, createdAt: new Date().toISOString() };
+      const entry = { id: `supp-${Date.now()}`, text, createdAt: new Date().toISOString(), attachments: supplementFiles.map((file) => file.name) };
       setReports((previous) => previous.map((report) => report.id === selectedReport.id
         ? { ...report, supplementaryInformation: [...report.supplementaryInformation, entry] }
         : report));
       setSupplementText("");
+      setSupplementFiles([]);
       setSupplementFailurePreview(false);
       setSupplementSaving(false);
       supplementSendLock.current = false;
@@ -1028,8 +1085,8 @@ export default function ICEApp() {
   }
 
   const title = screen === "settingsInfo" ? settingsInfo.title : screenTitles[screen];
-  const isLoginScreen = ["signIn", "signInLoading"].includes(screen);
-  const showNav = !["sosActivate", "sosConfirm", "sosSending", "sosOutcome", "sosSent", "sosCancelled", "sosUnavailable", "sosNotDelivered", "sosStatusUnavailable", "reportSubmitting", "signIn", "signInLoading", "supplementSubmitting"].includes(screen);
+  const isLoginScreen = ["signIn", "signInLoading", "firstLoginWelcome"].includes(screen);
+  const showNav = !["sosActivate", "sosConfirm", "sosSending", "sosOutcome", "sosSent", "sosCancelled", "sosUnavailable", "sosNotDelivered", "sosStatusUnavailable", "reportSubmitting", "signIn", "signInLoading", "firstLoginWelcome", "supplementSubmitting"].includes(screen);
 
   return (
     <main className="ice-stage flex min-h-[100dvh] items-center justify-center bg-[#e9ece9] p-0 sm:p-5">
@@ -1039,6 +1096,7 @@ export default function ICEApp() {
         <div className={`ice-content min-h-0 flex-1 overflow-y-auto overscroll-contain ${isLoginScreen ? "" : "px-4 pb-4"}`}>
           {screen === "signIn" && <MicrosoftSignInScreen onContinue={simulateSignIn} />}
           {screen === "signInLoading" && <LoadingScreen icon={<ShieldCheck />} title="Signing in to ICE" detail="Sign-in is a visual flow only. No account or credentials are being verified." />}
+          {screen === "firstLoginWelcome" && <FirstLoginWelcomeScreen onContinue={completeFirstLoginWelcome} />}
           {screen === "home" && (
             <HomeScreen
               unreadCount={unreadCount}
@@ -1063,7 +1121,12 @@ export default function ICEApp() {
             requestQuickReportChoice(id);
           }} />}
           {screen === "quickReportDetails" && selectedQuickReport && <QuickReportDetailsScreen report={selectedQuickReport} errors={quickDetailsErrors} saving={quickDetailsSaving} objectUrls={quickEvidenceObjectUrls} onChange={(values) => patchQuickReport(selectedQuickReport.key, values)} onSave={() => saveQuickReportDetails(selectedQuickReport)} onCancel={back} />}
-          {screen === "quickReportDetail" && selectedQuickReport && <QuickReportStatusScreen report={selectedQuickReport} onAddDetails={() => startReport(selectedQuickReport.categoryId, selectedQuickReport)} onHome={() => openTab("home")} />}
+          {screen === "quickReportDetail" && selectedQuickReport && <QuickReportStatusScreen
+            report={selectedQuickReport}
+            onAddDetails={() => startReport(selectedQuickReport.categoryId, selectedQuickReport)}
+            onRetry={() => startQuickReport(selectedQuickReport.categoryId, selectedQuickReport.key)}
+            onHome={() => openTab("home")}
+          />}
           {screen === "reportDetails" && <ReportDetailsScreen draft={draft} errors={draftErrors} onChange={patchDraft} onChooseCategory={() => go("categories")} onBack={back} onNext={() => validateReportDetails() && go("reportLocation")} />}
           {screen === "reportLocation" && <LocationScreen draft={draft} errors={draftErrors} onChange={patchDraft} onNext={() => validateLocation() && go("reportEvidence")} onBack={back} />}
           {screen === "reportEvidence" && <EvidenceScreen draft={draft} onChange={patchDraft} onNext={() => go("reportReview")} />}
@@ -1082,9 +1145,9 @@ export default function ICEApp() {
           }} onCreate={() => startReport()} onPreviewUnavailable={() => go("reportsUnavailable")} />}
           {screen === "reportsEmpty" && <OutcomeScreen icon={<FileText />} tone="gray" title="No reports yet" description="When you submit an incident report, it will appear here." button="Open reports" onClick={back} />}
           {screen === "reportsUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Reports unavailable" description="The report list cannot be loaded in this preview state. Your locally held form data remains unchanged." button="Retry reports" onClick={back} />}
-          {screen === "reportDetail" && selectedReport && <ReportDetailScreen report={selectedReport} onHistory={() => go("reportHistory")} onSupplement={() => { setSupplementText(""); setSupplementError(""); setSupplementFailurePreview(false); go("supplementaryInformation"); }} />}
+          {screen === "reportDetail" && selectedReport && <ReportDetailScreen report={selectedReport} onHistory={() => go("reportHistory")} onSupplement={() => { setSupplementText(""); setSupplementFiles([]); setSupplementError(""); setSupplementFailurePreview(false); go("supplementaryInformation"); }} />}
           {screen === "reportHistory" && selectedReport && <HistoryScreen report={selectedReport} onBack={back} />}
-          {screen === "supplementaryInformation" && selectedReport && <SupplementaryInformationScreen report={selectedReport} text={supplementText} error={supplementError} saving={supplementSaving} onChange={(value) => { setSupplementText(value); if (value.trim()) setSupplementError(""); }} onSubmit={submitSupplementaryInformation} onCancel={back} onPreviewFailure={() => setSupplementFailurePreview(true)} />}
+          {screen === "supplementaryInformation" && selectedReport && <SupplementaryInformationScreen report={selectedReport} text={supplementText} files={supplementFiles} error={supplementError} saving={supplementSaving} onChange={(value) => { setSupplementText(value); if (value.trim()) setSupplementError(""); }} onFilesChange={setSupplementFiles} onSubmit={submitSupplementaryInformation} onCancel={back} onPreviewFailure={() => setSupplementFailurePreview(true)} />}
           {screen === "supplementSubmitting" && <LoadingScreen icon={<Send />} title="Sending supplementary information" detail="Saving this update in the local demonstration." />}
           {screen === "supplementSuccess" && <SupplementarySuccessScreen report={selectedReport} onReport={() => { setScreenStack(["reports"]); setScreen("reportDetail"); setActiveTab("report"); }} />}
           {screen === "supplementFailure" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Information not sent" description="The update could not be saved. Your text is still available to retry." button="Try again" onClick={() => setScreen("supplementaryInformation")} secondaryAction={() => { setScreenStack(["reports"]); setScreen("reportDetail"); setActiveTab("report"); }} secondaryLabel="Back to report" />}
@@ -1181,7 +1244,7 @@ function BottomNav({ activeTab, onChange, alertActionCount, onSOS }: { activeTab
         <path d="M0 20C0 8 8 0 20 0H136C164 0 169 7 180 27C186 39 189 49 195 49C201 49 204 39 210 27C221 7 226 0 254 0H370C382 0 390 8 390 20V104H0Z" fill="#fbfcfb" stroke="#e4ebe5" strokeWidth="1" />
       </svg>
       <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-[env(safe-area-inset-bottom)] bg-[#fbfcfb]" />
-      <div className="relative z-30 grid h-full grid-cols-6 items-end px-1 pb-[max(9px,env(safe-area-inset-bottom))]">
+      <div className="relative z-10 grid h-full grid-cols-6 items-end px-1 pb-[max(9px,env(safe-area-inset-bottom))]">
         {tabs.slice(0, 2).map(({ id, label, icon: Icon }) => {
           const active = activeTab === id;
           return (
@@ -1543,26 +1606,59 @@ function QuickReportDetailsScreen({
   );
 }
 
-function QuickReportStatusScreen({ report, onAddDetails, onHome }: { report: QuickReport; onAddDetails: () => void; onHome: () => void }) {
+function QuickReportStatusScreen({ report, onAddDetails, onRetry, onHome }: { report: QuickReport; onAddDetails: () => void; onRetry: () => void; onHome: () => void }) {
   const category = categoryFor(report.categoryId);
   const Icon = category.icon;
+  const isFailed = report.sendStatus === "failed";
+  const isSending = report.sendStatus === "sending";
+  const timeline = report.timeline ?? [];
   return (
     <div className="space-y-3 py-4">
-      <Panel className="flex items-start gap-3 bg-[#f0f8f0]">
-        <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />
-        <div><p className="text-sm font-semibold text-[#135b39]">Quick report sent</p><p className="mt-1 text-xs text-[#53645a]">This status is held in the local demonstration.</p></div>
+      <Panel className={`flex items-start gap-3 ${isFailed ? "bg-[#fff6f4]" : "bg-[#f0f8f0]"}`}>
+        {isFailed
+          ? <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-[#b42318]" />
+          : isSending
+            ? <LoaderCircle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-[#087443]" />
+            : <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />}
+        <div>
+          <p className={`text-sm font-semibold ${isFailed ? "text-[#9f271f]" : "text-[#135b39]"}`}>{isFailed ? "Quick report not sent" : isSending ? "Quick report sending" : "Quick report sent"}</p>
+          <p className="mt-1 text-xs text-[#53645a]">{isFailed ? "The local submission failed. Retry the same report to try again." : "This status is held in the local demonstration."}</p>
+        </div>
       </Panel>
       <Panel className="space-y-4">
-        <div><p className="text-[10px] text-[#718078]">Reference</p><p className="mt-1 break-all text-sm font-semibold text-[#26372c]">{report.reference}</p></div>
+        <div><p className="text-[10px] text-[#718078]">Reference</p><p className="mt-1 break-all text-sm font-semibold text-[#26372c]">{report.reference || "Not assigned"}</p></div>
         <DetailRow icon={<Icon />} label="Category" value={report.category} />
         <DetailRow icon={<CalendarDays />} label="Reported" value={new Date(report.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
         <DetailRow icon={<UserRound />} label="Reported by" value={report.reporterName} />
         <DetailRow icon={<MapPin />} label="Location" value={report.location || "Not available"} />
         {report.dateTime && <DetailRow icon={<CalendarDays />} label="Incident date and time" value={new Date(report.dateTime).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} />}
         <DetailRow icon={<FileText />} label="Details" value={report.detailStatus === "completed" ? report.summary : "Not added yet"} />
-        <StatusPill>{report.detailStatus === "completed" ? "Details added" : "Quick report sent"}</StatusPill>
+        <StatusPill tone={isFailed ? "red" : isSending ? "amber" : "green"}>{isFailed ? "Not sent" : isSending ? "Sending" : report.detailStatus === "completed" ? "Details added" : "Quick report sent"}</StatusPill>
       </Panel>
-      {report.detailStatus !== "completed" && <Button onClick={onAddDetails} className="w-full">Add details</Button>}
+      <section aria-label="Quick report status timeline">
+        <h2 className="mb-3 text-sm font-semibold text-[#26372c]">Status timeline</h2>
+        {timeline.length > 0 ? timeline.map((event, index) => {
+          const failed = event.status === "failed";
+          const pending = event.status === "in_progress";
+          const EventIcon = failed ? AlertTriangle : pending ? LoaderCircle : Check;
+          return (
+            <div key={event.id} className="relative flex gap-3 pb-3 last:pb-0">
+              {index < timeline.length - 1 && <span className={`absolute left-[9px] top-5 h-full w-px ${failed ? "bg-[#f0c5c1]" : "bg-[#cde3d2]"}`} aria-hidden="true" />}
+              <span className={`relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${failed ? "bg-[#b42318] text-white" : pending ? "border-2 border-[#087443] bg-white text-[#087443]" : "bg-[#087443] text-white"}`}>
+                <EventIcon className={`h-3 w-3 ${pending ? "animate-spin" : ""}`} />
+              </span>
+              <div className="min-w-0 flex-1 rounded-xl border border-[#e1e8e2] bg-white p-3">
+                <p className="text-xs font-semibold text-[#26372c]">{event.title}</p>
+                <p className="mt-1 text-xs leading-4 text-[#66736b]">{event.description}</p>
+                <p className="mt-2 text-[10px] text-[#718078]">{formatNotificationTime(event.createdAt)}</p>
+              </div>
+            </div>
+          );
+        }) : <p className="rounded-xl border border-[#e1e8e2] bg-white p-3 text-xs leading-5 text-[#66736b]">No tracking events yet.</p>}
+        <p className="mt-3 text-[10px] leading-4 text-[#829087]">Timeline events reflect this local demo only; no live responder or processing updates are connected.</p>
+      </section>
+      {isFailed && <Button onClick={onRetry} className="w-full">Retry same quick report</Button>}
+      {!isFailed && report.detailStatus !== "completed" && <Button onClick={onAddDetails} className="w-full">Add details</Button>}
       <Button onClick={onHome} variant="quiet" className="w-full">Back to Home</Button>
     </div>
   );
@@ -1963,6 +2059,7 @@ function ReportDetailScreen({ report, onHistory, onSupplement }: { report: Repor
         <h3 className="text-xs font-semibold text-[#35463c]">Supplementary information</h3>
         {report.supplementaryInformation.map((entry) => <Panel key={entry.id} className="p-3">
           <p className="whitespace-pre-wrap break-words text-xs leading-5 text-[#26372c]">{entry.text}</p>
+          {(entry.attachments ?? []).length > 0 && <p className="mt-2 text-[11px] text-[#52645a]">Attachments: {(entry.attachments ?? []).join(", ")}</p>}
           <p className="mt-2 text-[11px] text-[#718078]">Added {new Date(entry.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
         </Panel>)}
       </section>}
@@ -1976,8 +2073,10 @@ function ReportDetailScreen({ report, onHistory, onSupplement }: { report: Repor
 function HistoryScreen({ report, onBack }: { report: Report; onBack: () => void }) {
   const category = categoryFor(report.category.toLowerCase());
   const Icon = category.icon;
-  const stages: Report["status"][] = ["Submitted", "In progress", "Resolved"];
-  const completedStages = new Set(report.history.map((event) => stages.find((stage) => event.toLowerCase().startsWith(stage.toLowerCase()))).filter((stage): stage is Report["status"] => Boolean(stage)));
+  const stages = ["Submitted", "Received", "Under Review", "Assigned", "In Progress", "Resolved"] as const;
+  const completedStages = new Set(report.history
+    .map((event) => stages.find((stage) => event.toLowerCase().startsWith(stage.toLowerCase())))
+    .filter((stage): stage is typeof stages[number] => Boolean(stage)));
   return (
     <div className="space-y-4 py-3">
       <section className="flex items-start gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3">
@@ -1993,12 +2092,12 @@ function HistoryScreen({ report, onBack }: { report: Report; onBack: () => void 
             <span className={`relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${isComplete ? "bg-[#087443] text-white" : "border-2 border-[#cbd5ce] bg-white text-[#718078]"}`}>{isComplete ? <Check className="h-3 w-3" /> : null}</span>
             <div className="min-w-0 flex-1 rounded-xl border border-[#e1e8e2] bg-white p-3">
               <p className="text-xs font-semibold text-[#26372c]">{stage}</p>
-              <p className="mt-1 text-xs text-[#66736b]">{event ? event.split("·").slice(1).join("·").trim() || "Recorded" : "Not started"}</p>
+              <p className="mt-1 text-xs text-[#66736b]">{event ? event.split("·").slice(1).join("·").trim() || "Confirmed" : "Not started"}</p>
             </div>
           </div>;
         })}
       </section>
-      <p className="text-xs leading-5 text-[#66736b]">Status stages update when confirmed.</p>
+      <p className="text-xs leading-5 text-[#66736b]">Only confirmed status updates appear here. Stages without a confirmed update remain not started.</p>
       <Button variant="quiet" onClick={onBack} className="w-full">Back to report</Button>
     </div>
   );
@@ -2007,39 +2106,77 @@ function HistoryScreen({ report, onBack }: { report: Report; onBack: () => void 
 function SupplementaryInformationScreen({
   report,
   text,
+  files,
   error,
   saving,
   onChange,
+  onFilesChange,
   onSubmit,
   onCancel,
   onPreviewFailure,
 }: {
   report: Report;
   text: string;
+  files: File[];
   error: string;
   saving: boolean;
   onChange: (text: string) => void;
+  onFilesChange: (files: File[]) => void;
   onSubmit: () => void;
   onCancel: () => void;
   onPreviewFailure: () => void;
 }) {
+  const [attachmentError, setAttachmentError] = useState("");
+
+  function selectAttachments(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    const oversizedFile = selectedFiles.find((file) => file.size > 10 * 1024 * 1024);
+    if (oversizedFile) {
+      setAttachmentError(`${oversizedFile.name} exceeds the 10 MB per-file limit.`);
+      event.target.value = "";
+      return;
+    }
+    setAttachmentError("");
+    onFilesChange([...files, ...selectedFiles]);
+    event.target.value = "";
+  }
+
   return (
     <div className="space-y-3 py-3">
       <section className="rounded-2xl border border-[#e1e8e2] bg-white p-3">
-        <p className="break-words text-[13px] font-semibold text-[#18231d]">{report.summary}</p>
-        <p className="mt-1 break-all text-xs text-[#66736b]">{report.id} · {report.category}</p>
-        <p className="mt-1 text-xs text-[#66736b]">{report.dateTime}{report.location ? ` · ${report.location}` : ""}</p>
+        <div className="flex items-start gap-2.5">
+          <FileText className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />
+          <div className="min-w-0">
+            <p className="break-all text-xs font-semibold text-[#087443]">{report.id}</p>
+            <p className="mt-1 break-words text-[11px] text-[#52645a]">{report.category} · {report.dateTime}</p>
+            {report.location && <p className="mt-0.5 break-words text-[11px] text-[#718078]">{report.location}</p>}
+          </div>
+        </div>
       </section>
       <div>
-        <h2 className="text-sm font-semibold text-[#18231d]">Add supplementary information</h2>
+        <h2 className="text-base font-semibold text-[#18231d]">Add useful information.</h2>
         <p className="mt-1 text-xs leading-5 text-[#66736b]">This is added to the existing report; it won&apos;t replace the original details.</p>
       </div>
       <Field label="Additional information" required error={error}>
         <textarea value={text} onChange={(event) => onChange(event.target.value.slice(0, 500))} maxLength={500} rows={5} placeholder="Add relevant details or updates…" className={`${inputClass(Boolean(error))} min-h-32 resize-y`} />
       </Field>
       <p className="text-right text-[11px] text-[#718078]">{text.length}/500</p>
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-[#26372c]">Add attachment (optional)</p>
+        <label className="flex min-h-20 cursor-pointer items-center justify-center gap-3 rounded-xl border border-dashed border-[#cfdad1] bg-white px-3 py-4 text-xs text-[#52645a] hover:bg-[#f8fbf8]">
+          <Images className="h-5 w-5 shrink-0 text-[#087443]" />
+          <span>Tap to choose a file<br /><span className="text-[10px] text-[#718078]">Photos, videos, or documents · Max 10 MB per file</span></span>
+          <input className="sr-only" type="file" accept="image/*,video/*,.pdf,.doc,.docx,.txt" multiple onChange={selectAttachments} disabled={saving} aria-label="Choose supplementary attachments" />
+        </label>
+        {files.map((file, index) => <div key={`${file.name}-${file.size}-${file.lastModified}`} className="flex min-h-10 items-center gap-2 rounded-lg border border-[#e1e8e2] bg-white px-3">
+          <FileText className="h-4 w-4 shrink-0 text-[#087443]" />
+          <span className="min-w-0 flex-1 truncate text-[11px] text-[#33443a]">{file.name}</span>
+          <button type="button" onClick={() => onFilesChange(files.filter((_, fileIndex) => fileIndex !== index))} disabled={saving} aria-label={`Remove ${file.name}`} className="flex h-9 w-9 items-center justify-center rounded-full text-[#65736a] hover:bg-[#f2f7f3] disabled:opacity-50"><X className="h-4 w-4" /></button>
+        </div>)}
+        {attachmentError && <p role="alert" className="text-xs text-[#b42318]">{attachmentError}</p>}
+      </div>
       <p className="flex items-start gap-2 text-xs leading-5 text-[#52645a]"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />Share only relevant information. Avoid unnecessary sensitive personal or medical details.</p>
-      <p className="text-xs text-[#66736b]">Saved locally in this demonstration; it is not sent to a live service.</p>
+      <p className="text-xs text-[#66736b]">Saved locally in this demonstration; attachments are not uploaded to a live service.</p>
       <div className="space-y-2 pt-1">
         <Button onClick={onSubmit} disabled={saving} className="w-full">{saving ? <><LoaderCircle className="h-4 w-4 animate-spin" />Sending…</> : "Send supplementary information"}</Button>
         <Button variant="secondary" onClick={onCancel} disabled={saving} className="w-full">Cancel</Button>
@@ -3005,6 +3142,24 @@ function ContactForm({
       <Button type="submit" className="w-full">{editing ? "Save changes" : "Add contact"}</Button>
       <Button variant="secondary" onClick={onCancel} className="w-full">Cancel</Button>
     </form>
+  );
+}
+
+function FirstLoginWelcomeScreen({ onContinue }: { onContinue: () => void }) {
+  return (
+    <section className="relative isolate flex min-h-full flex-col items-center justify-center overflow-hidden px-6 py-10 text-center text-white">
+      <div aria-hidden="true" className="absolute -inset-3 -z-20 bg-cover bg-center blur-[8px]" style={{ backgroundImage: "url('/images/bg%20image%20nsia.png')" }} />
+      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-b from-[#062b1d]/70 via-[#063b27]/75 to-[#031b12]/90" />
+      <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white/15 text-white ring-1 ring-white/30 backdrop-blur-sm">
+        <ShieldCheck aria-hidden="true" className="h-10 w-10" strokeWidth={1.7} />
+      </span>
+      <p className="mt-6 text-xs font-semibold uppercase tracking-[0.16em] text-white/85">ICE · NSIA</p>
+      <h1 className="mt-3 text-[28px] font-semibold tracking-[-0.03em] text-white">Welcome, Mike!</h1>
+      <p className="mt-3 max-w-[300px] text-sm leading-6 text-white/90">Your ICE workspace is ready. View safety alerts, report incidents, and manage your emergency contacts here.</p>
+      <Button onClick={onContinue} className="mt-8 w-full border border-white/20 bg-white !text-[#087443] hover:bg-[#f2f7f3]">
+        Continue to ICE<ChevronRight className="h-4 w-4" />
+      </Button>
+    </section>
   );
 }
 
