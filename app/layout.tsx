@@ -2,12 +2,12 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Kadir Salami",
-  description: "Coherence-led leadership and digital transformation",
+  title: "NSIA ICE 2.0 Emergency Safety App",
+  description: "Mobile emergency safety and incident reporting experience for NSIA staff",
   icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon.ico',
-    apple: '/apple-touch-icon.png',
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
   },
 };
 
@@ -19,7 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth">
       <body className="bg-white text-black antialiased">
-        <main>{children}</main>
+        {children}
       </body>
     </html>
   );
