@@ -35,7 +35,6 @@ import {
   Phone,
   Plus,
   Radio,
-  RotateCcw,
   Search,
   Settings,
   Send,
@@ -101,6 +100,8 @@ type Screen =
   | "settingsInfo"
   | "contacts"
   | "contactEdit"
+  | "helpContacts"
+  | "helpContactDetail"
   | "signIn"
   | "signInLoading"
   | "firstLoginWelcome";
@@ -203,6 +204,8 @@ type FeedItem = {
   source: string;
   time: string;
   description: string;
+  body: string[];
+  topic: "weather" | "traffic" | "health" | "security";
   classification: "Shareable" | "Internal Only" | "Restricted";
 };
 
@@ -212,6 +215,19 @@ type EmergencyContact = {
   relationship: string;
   phone: string;
   priority: "Primary" | "Secondary" | "Tertiary";
+};
+
+type HelpContact = {
+  id: string;
+  name: string;
+  org: string;
+  phone: string;
+  hours: string;
+  department: string;
+  departmentNote: string;
+  whenToContact: string;
+  guidance: string;
+  icon: typeof Siren;
 };
 
 type SosEvent = {
@@ -279,13 +295,13 @@ const initialAlerts: Alert[] = [
   {
     id: "alert-flood",
     reference: "ALT-2026-0001",
-    title: "Heavy flooding reported nearby",
-    description: "Riverside access road affected. Use the west entrance and follow Security guidance.",
+    title: "Flooding on Ahmadu Bello Way after heavy rainfall",
+    description: "Heavy overnight rainfall has caused flooding along Ahmadu Bello Way, affecting the HQ access road. Use the west entrance and follow Security guidance until the road clears.",
     category: "Safety",
     priority: "Critical",
     time: "Today, 09:31",
     source: "NSIA Security",
-    affectedArea: "Riverside access road",
+    affectedArea: "Ahmadu Bello Way, HQ access road",
     classification: "Internal Only",
     requiresAcknowledgement: true,
     acknowledged: false,
@@ -318,6 +334,48 @@ const initialAlerts: Alert[] = [
     requiresAcknowledgement: false,
     acknowledged: false,
   },
+  {
+    id: "alert-dawaki-crash",
+    reference: "ALT-2026-0004",
+    title: "Multi-vehicle crash at Dawaki Junction",
+    description: "A multiple-vehicle crash on the Kubwa Expressway near Dawaki Junction is causing severe congestion. Allow extra travel time and consider alternate routes.",
+    category: "Safety",
+    priority: "Advisory",
+    time: "Today, 07:52",
+    source: "FCT Police · Traffic Division",
+    affectedArea: "Kubwa Expressway, Dawaki Junction",
+    classification: "Shareable",
+    requiresAcknowledgement: false,
+    acknowledged: false,
+  },
+  {
+    id: "alert-bwari-operation",
+    reference: "ALT-2026-0005",
+    title: "Security operation concluded in Bwari area",
+    description: "FCT Police and local vigilante units have concluded a rescue operation in the Bwari Area Council. Staff travelling through the area should follow official guidance and avoid the vicinity until further notice.",
+    category: "Security",
+    priority: "Informational",
+    time: "Yesterday, 19:40",
+    source: "FCT Police · NSIA Security",
+    affectedArea: "Bwari Area Council",
+    classification: "Internal Only",
+    requiresAcknowledgement: false,
+    acknowledged: false,
+  },
+  {
+    id: "alert-airport-road-traffic",
+    reference: "ALT-2026-0006",
+    title: "Heavy traffic on Airport Road",
+    description: "Significant delays are reported inbound from Lugbe, Sauka and Gosa toward the central area. Slow movement is also noted around Riverpark Estate Junction following a recent accident.",
+    category: "Access",
+    priority: "Advisory",
+    time: "Today, 08:10",
+    source: "NSIA Security",
+    affectedArea: "Airport Road (Umaru Musa Yar'Adua Expressway)",
+    classification: "Shareable",
+    requiresAcknowledgement: false,
+    acknowledged: false,
+  },
 ];
 
 const initialSystemNotifications: NotificationItem[] = [
@@ -344,6 +402,12 @@ const initialFeed: FeedItem[] = [
     source: "Nigerian Meteorological Agency (NiMet)",
     time: "Today, 08:20",
     description: "Heavy rainfall is expected across parts of Abuja today. Follow official updates and allow additional time for travel.",
+    body: [
+      "NiMet has issued an advisory for heavy to moderate rainfall across the Federal Capital Territory through this afternoon, with the heaviest showers expected between late morning and early evening.",
+      "Localized flooding is possible on low-lying roads and underpasses, and reduced visibility may slow traffic on major routes. Residents are advised to secure loose outdoor items and avoid unnecessary travel during the heaviest spells of rain.",
+      "Staff commuting to and from the office should allow extra travel time, follow posted detours around any flooded sections, and continue to monitor official NiMet channels for updates as the advisory develops.",
+    ],
+    topic: "weather",
     classification: "Shareable",
   },
   {
@@ -352,6 +416,12 @@ const initialFeed: FeedItem[] = [
     source: "NSIA Security",
     time: "Yesterday, 17:10",
     description: "Traffic is heavier than usual near the main entrance. Consider allowing additional travel time.",
+    body: [
+      "NSIA Security is reporting heavier than usual traffic around the headquarters main entrance this afternoon, caused by a combination of ongoing road maintenance and the evening commute.",
+      "Vehicles approaching from the west entrance are experiencing the longest delays, with queues building back toward the main road junction. The east entrance remains relatively clear and is the recommended route for staff leaving site this evening.",
+      "Facilities and Security teams are coordinating with traffic wardens on-site to keep vehicles moving. This notice will be updated if conditions change significantly.",
+    ],
+    topic: "traffic",
     classification: "Internal Only",
   },
   {
@@ -360,6 +430,12 @@ const initialFeed: FeedItem[] = [
     source: "Federal Ministry of Health",
     time: "04 Oct 2026, 12:00",
     description: "Seasonal health guidance and prevention information for staff.",
+    body: [
+      "The Federal Ministry of Health has noted a seasonal rise in flu-like illness across the region, consistent with the usual pattern seen at this time of year.",
+      "Common symptoms include fever, cough, sore throat, body aches and fatigue, typically lasting around a week. Most cases can be managed with rest, fluids and over-the-counter remedies, but anyone with severe or worsening symptoms should seek medical attention promptly.",
+      "Staff are encouraged to practice regular handwashing, cover coughs and sneezes, and stay home when unwell to reduce the spread of illness within the office. Contact the Medical desk if you need guidance.",
+    ],
+    topic: "health",
     classification: "Shareable",
   },
   {
@@ -368,6 +444,12 @@ const initialFeed: FeedItem[] = [
     source: "Department of State Services",
     time: "03 Oct 2026, 09:00",
     description: "General security information shared for awareness.",
+    body: [
+      "The Department of State Services has shared a routine situational briefing for the Federal Capital Territory, with no specific threat identified against NSIA facilities or staff.",
+      "As a standing precaution, staff are reminded to keep access badges visible at all times on-site, report unattended items or unfamiliar visitors to Security immediately, and avoid sharing sensitive location or schedule details on public channels.",
+      "This briefing is shared for general awareness only. Any specific, actionable guidance will continue to be issued separately through the Alerts channel.",
+    ],
+    topic: "security",
     classification: "Restricted",
   },
 ];
@@ -375,6 +457,69 @@ const initialFeed: FeedItem[] = [
 const initialContacts: EmergencyContact[] = [
   { id: "contact-1", name: "Amina Yusuf", relationship: "Primary contact", phone: "+234 801 234 5678", priority: "Primary" },
   { id: "contact-2", name: "Chidi Okafor", relationship: "Secondary contact", phone: "+234 802 345 6789", priority: "Secondary" },
+];
+
+const helpContacts: HelpContact[] = [
+  {
+    id: "help-security",
+    name: "Security",
+    org: "NSIA · Site Security",
+    phone: "+1 202-555-0101",
+    hours: "24-hour service",
+    department: "Site Security",
+    departmentNote: "Organization-controlled service",
+    whenToContact: "Immediate security concerns, access restrictions or on-site safety guidance.",
+    guidance: "If it is safe to speak, state your name, location and the help needed. Use the emergency service numbers configured for your location.",
+    icon: ShieldCheck,
+  },
+  {
+    id: "help-medical",
+    name: "Medical",
+    org: "NSIA · Medical desk",
+    phone: "+1 202-555-0102",
+    hours: "24-hour service",
+    department: "Medical desk",
+    departmentNote: "Organization-controlled service",
+    whenToContact: "Injuries, sudden illness, or any situation needing urgent medical attention on-site.",
+    guidance: "If it is safe to speak, state your name, location and the help needed. Use the emergency service numbers configured for your location.",
+    icon: Stethoscope,
+  },
+  {
+    id: "help-fire",
+    name: "Fire",
+    org: "Configured fire service",
+    phone: "+1 202-555-0103",
+    hours: "24-hour service",
+    department: "Fire service",
+    departmentNote: "Organization-controlled service",
+    whenToContact: "Fire, smoke, or any hazard requiring the fire service to respond.",
+    guidance: "If it is safe to speak, state your name, location and the help needed. Use the emergency service numbers configured for your location.",
+    icon: Flame,
+  },
+  {
+    id: "help-police",
+    name: "Police",
+    org: "Configured police liaison",
+    phone: "+1 202-555-0104",
+    hours: "24-hour service",
+    department: "Police liaison",
+    departmentNote: "Organization-controlled service",
+    whenToContact: "Crime, threats to safety, or any situation requiring law enforcement.",
+    guidance: "If it is safe to speak, state your name, location and the help needed. Use the emergency service numbers configured for your location.",
+    icon: Siren,
+  },
+  {
+    id: "help-response-team",
+    name: "Response Team",
+    org: "NSIA · Safety response",
+    phone: "+1 202-555-0105",
+    hours: "24-hour service",
+    department: "Safety response",
+    departmentNote: "Organization-controlled service",
+    whenToContact: "Coordinating an on-site safety response or reporting an incident that needs a team dispatched.",
+    guidance: "If it is safe to speak, state your name, location and the help needed. Use the emergency service numbers configured for your location.",
+    icon: Radio,
+  },
 ];
 
 const emptyDraft: IncidentDraft = {
@@ -434,11 +579,17 @@ const screenTitles: Partial<Record<Screen, string>> = {
   settingsInfo: "Settings",
   contacts: "Emergency contacts",
   contactEdit: "Emergency contact",
+  helpContacts: "Help Contacts",
+  helpContactDetail: "Help Contact Details",
 };
 
 function categoryFor(id: string) {
   const normalized = id.trim().toLowerCase();
   return categories.find((category) => category.id === normalized || category.label.toLowerCase() === normalized) ?? categories[categories.length - 1];
+}
+
+function callNumber(phone: string) {
+  window.location.href = `tel:${phone.replace(/[^0-9+]/g, "")}`;
 }
 
 function formatNotificationTime(value: string) {
@@ -581,6 +732,7 @@ export default function ICEApp() {
   const [feed] = useState(initialFeed);
   const [selectedFeedId, setSelectedFeedId] = useState(initialFeed[0].id);
   const [contacts, setContacts] = useState(initialContacts);
+  const [selectedHelpContactId, setSelectedHelpContactId] = useState(helpContacts[0].id);
   const [staffProfile, setStaffProfile] = useState(initialStaffProfile);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>({
     incidentUpdates: true,
@@ -595,7 +747,6 @@ export default function ICEApp() {
   const [supplementText, setSupplementText] = useState("");
   const [supplementFiles, setSupplementFiles] = useState<File[]>([]);
   const [supplementError, setSupplementError] = useState("");
-  const [supplementFailurePreview, setSupplementFailurePreview] = useState(false);
   const [supplementSaving, setSupplementSaving] = useState(false);
   const supplementSendLock = useRef(false);
   const [sosHistory, setSosHistory] = useState<SosEvent[]>([]);
@@ -618,9 +769,9 @@ export default function ICEApp() {
   const selectedReport = reports.find((report) => report.id === selectedReportId) ?? reports[0];
   const selectedQuickReport = quickReports.find((report) => report.key === selectedQuickReportKey);
   const currentQuickReport = quickReports[0];
-  const latestSentQuickReport = quickReports.find((report) => report.sendStatus === "sent");
   const selectedAlert = alerts.find((alert) => alert.id === selectedAlertId) ?? alerts[0];
   const selectedFeed = feed.find((item) => item.id === selectedFeedId) ?? feed[0];
+  const selectedHelpContact = helpContacts.find((item) => item.id === selectedHelpContactId) ?? helpContacts[0];
   const latestSosEvent = sosHistory[0];
   const selectedSosEvent = sosHistory.find((item) => item.reference === selectedSosReference) ?? latestSosEvent;
   const notificationItems = useMemo<NotificationItem[]>(() => [
@@ -782,8 +933,8 @@ export default function ICEApp() {
               id: `quick-timeline-${Date.now()}-result`,
               title: failed ? "Submission failed" : "Quick report sent",
               description: failed
-                ? "The local submission could not be completed. Retry to attempt this same event again."
-                : "The quick report was recorded in this local demonstration.",
+                ? "The submission could not be completed. Retry to attempt this same event again."
+                : "The quick report was recorded.",
               createdAt: completedAt,
               status: failed ? "failed" : "complete",
             }],
@@ -1083,30 +1234,16 @@ export default function ICEApp() {
     setSupplementSaving(true);
     setScreen("supplementSubmitting");
     window.setTimeout(() => {
-      if (supplementFailurePreview) {
-        setSupplementFailurePreview(false);
-        setSupplementSaving(false);
-        supplementSendLock.current = false;
-        setScreen("supplementFailure");
-        return;
-      }
       const entry = { id: `supp-${Date.now()}`, text, createdAt: new Date().toISOString(), attachments: supplementFiles.map((file) => file.name) };
       setReports((previous) => previous.map((report) => report.id === selectedReport.id
         ? { ...report, supplementaryInformation: [...report.supplementaryInformation, entry] }
         : report));
       setSupplementText("");
       setSupplementFiles([]);
-      setSupplementFailurePreview(false);
       setSupplementSaving(false);
       supplementSendLock.current = false;
       setScreen("supplementSuccess");
     }, 500);
-  }
-
-  function restartSession() {
-    if (window.confirm("Start a fresh session? This clears reports and any changes made during this session.")) {
-      window.location.reload();
-    }
   }
 
   function openSettingsInfo(title: string, description: string) {
@@ -1146,19 +1283,18 @@ export default function ICEApp() {
             <HomeScreen
               unreadCount={unreadCount}
               alerts={alerts}
-              reports={reports}
+              feed={feed}
               quickReport={currentQuickReport}
-              latestSentQuickReport={latestSentQuickReport}
               isQuickReportSending={currentQuickReport?.sendStatus === "sending"}
               onNotifications={() => go("notifications", "notifications")}
-              onAlert={() => { setSelectedAlertId(alerts[0].id); go("alertDetail", "alerts"); }}
-              onReport={() => startReport()}
+              onAlert={(alert) => { setSelectedAlertId(alert.id); go("alertDetail", "alerts"); }}
+              onViewAllAlerts={() => openTab("alerts")}
               onCategory={requestQuickReportChoice}
               onShowMore={() => go("quickCategories", "home")}
-              onContacts={() => go("contacts")}
-              onReports={() => go("reports", "report")}
+              onHelpContacts={() => go("helpContacts")}
+              onFeedSelect={(item) => { setSelectedFeedId(item.id); go("feedDetail"); }}
+              onViewAllFeed={() => go("feed")}
               onQuickRetry={(key) => startQuickReport(currentQuickReport?.categoryId ?? "", key)}
-              onTrackQuickReport={(report) => { setSelectedQuickReportKey(report.key); go("quickReportDetail", "home"); }}
             />
           )}
           {screen === "categories" && <CategoryScreen selected={draft.category} error={draftErrors.category} onSelect={(id) => patchDraft({ category: id })} onContinue={continueWithCategory} />}
@@ -1176,8 +1312,8 @@ export default function ICEApp() {
           {screen === "reportDetails" && <ReportDetailsScreen draft={draft} errors={draftErrors} onChange={patchDraft} onChooseCategory={() => go("categories")} onBack={back} onNext={() => validateReportDetails() && go("reportLocation")} />}
           {screen === "reportLocation" && <LocationScreen draft={draft} errors={draftErrors} onChange={patchDraft} onNext={() => validateLocation() && go("reportEvidence")} onBack={back} />}
           {screen === "reportEvidence" && <EvidenceScreen draft={draft} onChange={patchDraft} onNext={() => go("reportReview")} />}
-          {screen === "reportReview" && <ReviewScreen draft={draft} errors={draftErrors} onEdit={(target) => go(target)} onSubmit={() => finishReport()} onSimulateFailure={() => finishReport(true)} />}
-          {screen === "reportSubmitting" && <LoadingScreen icon={<ClipboardList />} title="Sending your report" detail="Saving this report in the local demonstration." />}
+          {screen === "reportReview" && <ReviewScreen draft={draft} errors={draftErrors} onEdit={(target) => go(target)} onSubmit={() => finishReport()} />}
+          {screen === "reportSubmitting" && <LoadingScreen icon={<ClipboardList />} title="Sending your report" detail="Please wait a moment." />}
           {screen === "reportSuccess" && <ReportResultScreen report={selectedReport} onReports={() => go("reports", "report")} onHome={() => openTab("home")} />}
           {screen === "reportFailure" && <ReportFailureScreen onReview={back} />}
           {screen === "reports" && <ReportsScreen reports={reports} quickReports={quickReports} filter={reportFilter} search={reportSearch} onSearch={setReportSearch} onFilter={setReportFilter} onSelect={(entry) => {
@@ -1188,13 +1324,13 @@ export default function ICEApp() {
               setSelectedReportId(entry.id);
               go("reportDetail");
             }
-          }} onCreate={() => startReport()} onPreviewUnavailable={() => go("reportsUnavailable")} />}
+          }} onCreate={() => startReport()} />}
           {screen === "reportsEmpty" && <OutcomeScreen icon={<FileText />} tone="gray" title="No reports yet" description="When you submit an incident report, it will appear here." button="Open reports" onClick={back} />}
           {screen === "reportsUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Reports unavailable" description="The report list cannot be loaded in this preview state. Your locally held form data remains unchanged." button="Retry reports" onClick={back} />}
-          {screen === "reportDetail" && selectedReport && <ReportDetailScreen report={selectedReport} onHistory={() => go("reportHistory")} onSupplement={() => { setSupplementText(""); setSupplementFiles([]); setSupplementError(""); setSupplementFailurePreview(false); go("supplementaryInformation"); }} />}
+          {screen === "reportDetail" && selectedReport && <ReportDetailScreen report={selectedReport} onHistory={() => go("reportHistory")} onSupplement={() => { setSupplementText(""); setSupplementFiles([]); setSupplementError(""); go("supplementaryInformation"); }} />}
           {screen === "reportHistory" && selectedReport && <HistoryScreen report={selectedReport} onBack={back} />}
-          {screen === "supplementaryInformation" && selectedReport && <SupplementaryInformationScreen report={selectedReport} text={supplementText} files={supplementFiles} error={supplementError} saving={supplementSaving} onChange={(value) => { setSupplementText(value); if (value.trim()) setSupplementError(""); }} onFilesChange={setSupplementFiles} onSubmit={submitSupplementaryInformation} onCancel={back} onPreviewFailure={() => setSupplementFailurePreview(true)} />}
-          {screen === "supplementSubmitting" && <LoadingScreen icon={<Send />} title="Sending supplementary information" detail="Saving this update in the local demonstration." />}
+          {screen === "supplementaryInformation" && selectedReport && <SupplementaryInformationScreen report={selectedReport} text={supplementText} files={supplementFiles} error={supplementError} saving={supplementSaving} onChange={(value) => { setSupplementText(value); if (value.trim()) setSupplementError(""); }} onFilesChange={setSupplementFiles} onSubmit={submitSupplementaryInformation} onCancel={back} />}
+          {screen === "supplementSubmitting" && <LoadingScreen icon={<Send />} title="Sending supplementary information" detail="Please wait a moment." />}
           {screen === "supplementSuccess" && <SupplementarySuccessScreen report={selectedReport} onReport={() => { setScreenStack(["reports"]); setScreen("reportDetail"); setActiveTab("report"); }} />}
           {screen === "supplementFailure" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Information not sent" description="The update could not be saved. Your text is still available to retry." button="Try again" onClick={() => setScreen("supplementaryInformation")} secondaryAction={() => { setScreenStack(["reports"]); setScreen("reportDetail"); setActiveTab("report"); }} secondaryLabel="Back to report" />}
           {screen === "sosSending" && selectedSosEvent && <SosProcessingScreen event={selectedSosEvent} />}
@@ -1202,12 +1338,12 @@ export default function ICEApp() {
           {screen === "sosSent" && selectedSosEvent && <SosSentScreen event={selectedSosEvent} contacts={contacts} onAcknowledge={() => acknowledgeSos(selectedSosEvent.reference)} onHome={() => openTab("home")} />}
           {screen === "sosHistory" && <SosHistoryScreen history={sosHistory} onSelect={(event) => { setSelectedSosReference(event.reference); go("sosHistoryDetail"); }} />}
           {screen === "sosHistoryDetail" && selectedSosEvent && <SosSentScreen event={selectedSosEvent} contacts={contacts} onAcknowledge={() => acknowledgeSos(selectedSosEvent.reference)} onHome={back} homeLabel="Back to history" />}
-          {screen === "alerts" && <AlertsScreen alerts={alerts} onSelect={(alert) => { setSelectedAlertId(alert.id); go("alertDetail", "alerts"); }} onPreviewEmpty={() => go("alertsEmpty", "alerts")} onPreviewUnavailable={() => go("alertsUnavailable", "alerts")} />}
+          {screen === "alerts" && <AlertsScreen alerts={alerts} onSelect={(alert) => { setSelectedAlertId(alert.id); go("alertDetail", "alerts"); }} />}
           {screen === "alertsEmpty" && <OutcomeScreen icon={<Bell />} tone="gray" title="No active alerts" description="There are no active alerts to display in this preview state." button="Back to alerts" onClick={back} />}
           {screen === "alertsUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Alerts unavailable" description="The alert list is unavailable in this preview state. Try again to return to the list." button="Retry alerts" onClick={back} />}
           {screen === "alertDetail" && selectedAlert && <AlertDetailScreen alert={selectedAlert} onAcknowledge={() => acknowledgeAlert(selectedAlert)} />}
           {screen === "alertAcknowledged" && selectedAlert && <AlertAcknowledgedScreen alert={selectedAlert} onBack={back} />}
-          {screen === "notifications" && <NotificationsScreen items={notificationItems} read={notificationsRead} onSelect={markNotificationRead} onPreviewEmpty={() => go("notificationsEmpty", "notifications")} onPreviewUnavailable={() => go("notificationsUnavailable", "notifications")} />}
+          {screen === "notifications" && <NotificationsScreen items={notificationItems} read={notificationsRead} onSelect={markNotificationRead} />}
           {screen === "notificationsEmpty" && <OutcomeScreen icon={<Bell />} tone="gray" title="No notifications" description="System notices and updates about your reports will appear here." button="Back to notifications" onClick={back} />}
           {screen === "notificationsUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Notifications unavailable" description="Notification history could not be loaded in this preview state." button="Retry notifications" onClick={back} />}
           {screen === "notificationDetail" && selectedNotification && <NotificationDetailScreen
@@ -1222,7 +1358,7 @@ export default function ICEApp() {
             }}
           />}
           {screen === "notificationDetail" && !selectedNotification && <OutcomeScreen icon={<Bell />} tone="gray" title="Notification unavailable" description="This notification is not available in the current session." button="Back to notifications" onClick={back} />}
-          {screen === "feed" && <FeedScreen items={feed} onSelect={(item) => { setSelectedFeedId(item.id); go("feedDetail"); }} onPreviewEmpty={() => go("feedEmpty")} onPreviewUnavailable={() => go("feedUnavailable")} />}
+          {screen === "feed" && <FeedScreen items={feed} onSelect={(item) => { setSelectedFeedId(item.id); go("feedDetail"); }} />}
           {screen === "feedEmpty" && <OutcomeScreen icon={<Newspaper />} tone="gray" title="No feed updates" description="There are no feed items in this preview state." button="Back to feed" onClick={back} />}
           {screen === "feedUnavailable" && <OutcomeScreen icon={<AlertTriangle />} tone="amber" title="Security feed unavailable" description="Feed items could not be loaded in this preview state." button="Retry feed" onClick={back} />}
           {screen === "feedDetail" && selectedFeed && <FeedDetailScreen item={selectedFeed} />}
@@ -1236,7 +1372,6 @@ export default function ICEApp() {
             onEdit={() => { setProfileSaved(false); go("editProfile"); }}
             onSosHistory={() => go("sosHistory")}
             onSettings={() => go("settings")}
-            onRestartSession={restartSession}
           />}
           {screen === "editProfile" && <EditProfileScreen profile={staffProfile} onCancel={back} onSave={saveStaffProfile} />}
           {screen === "settings" && <SettingsScreen
@@ -1252,6 +1387,8 @@ export default function ICEApp() {
           {screen === "settingsInfo" && <SettingsInfoScreen description={settingsInfo.description} />}
           {screen === "contacts" && <ContactsScreen contacts={contacts} onAdd={() => editContact()} onEdit={editContact} onDelete={(id) => setContacts((previous) => previous.filter((contact) => contact.id !== id))} />}
           {screen === "contactEdit" && <ContactForm draft={contactDraft} error={contactError} editing={Boolean(editingContactId)} onChange={setContactDraft} onSave={saveContact} onCancel={back} />}
+          {screen === "helpContacts" && <HelpContactsScreen contacts={helpContacts} onSelect={(contact) => { setSelectedHelpContactId(contact.id); go("helpContactDetail"); }} />}
+          {screen === "helpContactDetail" && <HelpContactDetailScreen contact={selectedHelpContact} onBack={back} />}
         </div>
         {showNav && <BottomNav activeTab={activeTab} onChange={openTab} alertActionCount={alertsRequiringAcknowledgement} holdProgress={sosHoldProgress} onHoldStart={startSosHold} onHoldEnd={cancelSosHold} />}
         {sosHoldProgress > 0 && <SosHoldOverlay progress={sosHoldProgress} />}
@@ -1387,44 +1524,161 @@ function BottomNav({
   );
 }
 
+function AlertCarousel({
+  alerts,
+  onSelect,
+  onViewAll,
+}: {
+  alerts: Alert[];
+  onSelect: (alert: Alert) => void;
+  onViewAll: () => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const isInteractingRef = useRef(false);
+  const resumeTimeoutRef = useRef<number | null>(null);
+
+  function handleScroll() {
+    const container = scrollRef.current;
+    const card = container?.children[0] as HTMLElement | undefined;
+    if (!container || !card) return;
+    const gap = parseFloat(window.getComputedStyle(container).columnGap || "0") || 0;
+    const step = card.offsetWidth + gap;
+    if (step <= 0) return;
+    setActiveIndex(Math.max(0, Math.min(alerts.length - 1, Math.round(container.scrollLeft / step))));
+  }
+
+  function pauseAutoAdvance() {
+    isInteractingRef.current = true;
+    if (resumeTimeoutRef.current !== null) window.clearTimeout(resumeTimeoutRef.current);
+  }
+
+  function resumeAutoAdvance() {
+    if (resumeTimeoutRef.current !== null) window.clearTimeout(resumeTimeoutRef.current);
+    resumeTimeoutRef.current = window.setTimeout(() => {
+      isInteractingRef.current = false;
+    }, 2500);
+  }
+
+  useEffect(() => {
+    if (alerts.length <= 1) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setInterval(() => {
+      const container = scrollRef.current;
+      const card = container?.children[0] as HTMLElement | undefined;
+      if (!container || !card || isInteractingRef.current) return;
+      const gap = parseFloat(window.getComputedStyle(container).columnGap || "0") || 0;
+      const step = card.offsetWidth + gap;
+      if (step <= 0) return;
+      const nextIndex = (Math.round(container.scrollLeft / step) + 1) % alerts.length;
+      container.scrollTo({ left: nextIndex * step, behavior: reducedMotion ? "auto" : "smooth" });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [alerts.length]);
+
+  useEffect(() => () => {
+    if (resumeTimeoutRef.current !== null) window.clearTimeout(resumeTimeoutRef.current);
+  }, []);
+
+  if (alerts.length === 0) {
+    return (
+      <div className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-[#e3ede5] bg-[#eff7f0] px-3 py-3 text-[12px] text-[#294337]">
+        <Radio className="h-5 w-5 text-[#0b7243]" /><span className="flex-1">Stay aware. Stay safe.</span><span className="h-[3px] w-20 rounded-full bg-[#cfe3d4]"><span className="block h-full w-1/3 rounded-full bg-[#0b7243]" /></span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-[15px] font-semibold text-[#1d2d24]">Alerts</h2>
+        <button onClick={onViewAll} className="text-[11px] font-semibold text-[#087443]">View all <span aria-hidden="true">→</span></button>
+      </div>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        onPointerDown={pauseAutoAdvance}
+        onPointerUp={resumeAutoAdvance}
+        onPointerCancel={resumeAutoAdvance}
+        onTouchStart={pauseAutoAdvance}
+        onTouchEnd={resumeAutoAdvance}
+        className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
+      >
+        {alerts.map((alert) => {
+          const tone = alert.priority === "Critical"
+            ? { border: "border-[#f0c9c3]", bg: "bg-[#fff3f1]", iconBg: "bg-[#ffe1dc]", iconColor: "text-[#c0362a]" }
+            : alert.priority === "Advisory"
+              ? { border: "border-[#f0e2c9]", bg: "bg-[#fff8e9]", iconBg: "bg-[#ffedc8]", iconColor: "text-[#b7791f]" }
+              : { border: "border-[#dbe6e0]", bg: "bg-[#f3f8f4]", iconBg: "bg-[#e0f0e6]", iconColor: "text-[#2b6b4a]" };
+          const Icon = alert.priority === "Critical" ? AlertTriangle : alert.priority === "Advisory" ? BellRing : ShieldCheck;
+          return (
+            <button
+              key={alert.id}
+              onClick={() => onSelect(alert)}
+              className={`flex w-[86%] shrink-0 snap-start flex-col gap-2 rounded-2xl border ${tone.border} ${tone.bg} p-3.5 text-left`}
+            >
+              <div className="flex items-start gap-2.5">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tone.iconBg} ${tone.iconColor}`}><Icon className="h-5 w-5" /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[9px] font-semibold text-[#087443]">{alert.category}</span>
+                    <span aria-hidden="true" className="text-[9px] text-[#a1aaa4]">·</span>
+                    <span className={`text-[9px] font-medium ${tone.iconColor}`}>{alert.priority}</span>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-[13px] font-semibold leading-5 text-[#27332b]">{alert.title}</p>
+                </div>
+              </div>
+              <p className="line-clamp-2 text-[11px] leading-4 text-[#5c6a61]">{alert.description}</p>
+              <div className="mt-auto flex items-center justify-between gap-2 text-[10px] text-[#6b7971]">
+                <span className="truncate">{alert.affectedArea}</span>
+                <span className="flex shrink-0 items-center gap-1 font-semibold text-[#087443]">Details <ChevronRight className="h-3 w-3" /></span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {alerts.length > 1 && (
+        <div aria-hidden="true" className="mt-2 flex justify-center gap-1.5">
+          {alerts.map((alert, index) => (
+            <span key={alert.id} className={`h-1.5 rounded-full transition-all ${index === activeIndex ? "w-4 bg-[#087443]" : "w-1.5 bg-[#d8e3da]"}`} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HomeScreen({
   unreadCount,
   alerts,
-  reports,
+  feed,
   quickReport,
-  latestSentQuickReport,
   isQuickReportSending,
   onNotifications,
   onAlert,
-  onReport,
+  onViewAllAlerts,
   onCategory,
   onShowMore,
-  onContacts,
-  onReports,
+  onHelpContacts,
+  onFeedSelect,
+  onViewAllFeed,
   onQuickRetry,
-  onTrackQuickReport,
 }: {
   unreadCount: number;
   alerts: Alert[];
-  reports: Report[];
+  feed: FeedItem[];
   quickReport?: QuickReport;
-  latestSentQuickReport?: QuickReport;
   isQuickReportSending: boolean;
   onNotifications: () => void;
-  onAlert: () => void;
-  onReport: () => void;
+  onAlert: (alert: Alert) => void;
+  onViewAllAlerts: () => void;
   onCategory: (id: string) => void;
   onShowMore: () => void;
-  onContacts: () => void;
-  onReports: () => void;
+  onHelpContacts: () => void;
+  onFeedSelect: (item: FeedItem) => void;
+  onViewAllFeed: () => void;
   onQuickRetry: (key: string) => void;
-  onTrackQuickReport: (report: QuickReport) => void;
 }) {
-  const activeAlert = alerts.find((alert) => alert.priority === "Critical" && !alert.acknowledged);
-  const latestReport = reports[0];
-  const latestQuickReport = latestSentQuickReport;
-  const showQuickReportAsLatest = Boolean(latestQuickReport
-    && (!latestReport || Date.parse(latestQuickReport.createdAt) >= Date.parse(latestReport.createdAt)));
   return (
     <div className="flex min-h-full flex-col">
       <header className="flex items-center justify-between py-3">
@@ -1438,17 +1692,7 @@ function HomeScreen({
         </button>
       </header>
 
-      {activeAlert ? (
-        <button onClick={onAlert} className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-[#f0e2c9] bg-[#fff8e9] p-3 text-left">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#ffedc8] text-[#b7791f]"><Radio className="h-5 w-5" /></span>
-          <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-[#27332b]">{activeAlert.title}</span><span className="mt-0.5 block text-[11px] text-[#69766d]">Riverside access road affected.</span></span>
-          <ChevronRight className="h-4 w-4 text-[#946010]" />
-        </button>
-      ) : (
-        <div className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-[#e3ede5] bg-[#eff7f0] px-3 py-3 text-[12px] text-[#294337]">
-          <Radio className="h-5 w-5 text-[#0b7243]" /><span className="flex-1">Stay aware. Stay safe.</span><span className="h-[3px] w-20 rounded-full bg-[#cfe3d4]"><span className="block h-full w-1/3 rounded-full bg-[#0b7243]" /></span>
-        </div>
-      )}
+      <AlertCarousel alerts={alerts} onSelect={onAlert} onViewAll={onViewAllAlerts} />
 
       {quickReport && quickReport.sendStatus !== "sent" && (
         <QuickReportHomePanel
@@ -1456,33 +1700,6 @@ function HomeScreen({
           onRetry={() => onQuickRetry(quickReport.key)}
         />
       )}
-
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold text-[#1d2d24]">Recent activity</h2>
-        <button onClick={onReports} className="text-[11px] font-semibold text-[#087443]">View all <span aria-hidden="true">→</span></button>
-      </div>
-      {showQuickReportAsLatest && latestQuickReport ? (
-        <button onClick={() => onTrackQuickReport(latestQuickReport)} className="mb-5 flex items-center gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f0f6f1]" style={{ color: categoryFor(latestQuickReport.categoryId).color }}>
-            {(() => { const Icon = categoryFor(latestQuickReport.categoryId).icon; return <Icon className="h-5 w-5" />; })()}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-x-2 text-[10px] text-[#66736b]">
-              <StatusPill>{latestQuickReport.detailStatus === "completed" ? "Details added" : "Quick report sent"}</StatusPill>
-              <span>{new Date(latestQuickReport.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
-            </span>
-            <span className="mt-1 block truncate text-[13px] font-medium text-[#1c2b22]">{latestQuickReport.summary || `${latestQuickReport.category} quick report`}</span>
-            <span className="block text-[10px] text-[#718078]">{latestQuickReport.reference}</span>
-          </span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-[#647269]" />
-        </button>
-      ) : latestReport ? (
-        <button onClick={onReports} className="mb-5 flex items-center gap-3 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
-          <FileText className="h-5 w-5 shrink-0 text-[#2c6547]" />
-          <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-x-2 text-[10px] text-[#66736b]"><StatusPill>{latestReport.status}</StatusPill><span>{latestReport.dateTime}</span><span>·</span><span>{latestReport.location.split(",")[0]}</span></span><span className="mt-1 block truncate text-[13px] font-medium text-[#1c2b22]">{latestReport.summary}</span><span className="block text-[10px] text-[#718078]">{latestReport.id}</span></span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-[#647269]" />
-        </button>
-      ) : <p className="mb-5 rounded-2xl border border-dashed border-[#dfe7e0] p-4 text-center text-xs text-[#718078]">Your recent reports will appear here.</p>}
 
       <div className="mb-3">
         <h2 className="text-[15px] font-semibold text-[#1d2d24]">Report an incident</h2>
@@ -1498,14 +1715,27 @@ function HomeScreen({
       <div className="mt-2 flex justify-center">
         <button onClick={onShowMore} className="flex min-h-11 items-center gap-1 px-3 text-[11px] font-semibold text-[#087443]">Show more <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" /></button>
       </div>
-      <div className="mt-3 mb-2 flex items-center justify-between gap-1 py-1">
-        <button onClick={onContacts} aria-label="Emergency Contacts" className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-0 py-2 text-[#29463a] hover:text-[#087443]">
-          <ContactRound aria-hidden="true" className="h-[18px] w-[18px] shrink-0 text-[#32634b]" />
-          <span className="flex min-w-0 flex-col items-start leading-tight"><span className="text-[11px] font-medium">Contacts</span><span className="text-[10px] text-[#66736b]">Emergency</span></span>
-        </button>
-        <button onClick={onReport} aria-label="Report with details" className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-0 py-2 text-[#1d2d24] hover:text-[#087443]">
-          <ClipboardList className="h-[18px] w-[18px] shrink-0 text-[#32634b]" /><span className="flex flex-col items-start leading-tight"><span className="text-[11px] font-semibold">Report</span><span className="whitespace-nowrap text-[9px] text-[#66736b]">with details</span></span>
-        </button>
+      <button onClick={onHelpContacts} aria-label="Help contacts" className="mt-3 mb-2 flex min-h-[64px] w-full items-center gap-3 rounded-2xl border border-[#edf1ed] bg-[#f1f7f2] px-3.5 py-3 text-left transition-colors hover:bg-[#e8f2ea]">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/80 text-[#087443]"><Phone className="h-5 w-5" strokeWidth={2.2} /></span>
+        <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold text-[#1d2d24]">Help Contacts</span><span className="mt-0.5 block text-[11px] text-[#66736b]">Security, Medical, Fire and more</span></span>
+        <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-[#647269]" />
+      </button>
+
+      <div className="mt-2 mb-2 flex items-center justify-between">
+        <h2 className="text-[15px] font-semibold text-[#1d2d24]">Security Feed</h2>
+        <button onClick={onViewAllFeed} className="text-[11px] font-semibold text-[#087443]">View all <span aria-hidden="true">→</span></button>
+      </div>
+      <div className="flex gap-2.5 overflow-x-auto pb-1">
+        {feed.slice(0, 4).map((item) => (
+          <button key={item.id} onClick={() => onFeedSelect(item)} className="flex w-[70%] shrink-0 flex-col gap-2 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
+            <div className="flex items-start gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#edf5ef] text-[#087443]"><Newspaper className="h-4 w-4" /></span>
+              <p className="line-clamp-2 min-w-0 flex-1 text-[12px] font-semibold leading-5 text-[#24352b]">{item.title}</p>
+            </div>
+            <p className="line-clamp-2 text-[11px] leading-4 text-[#5c6a61]">{item.description}</p>
+            <p className="text-[10px] text-[#829087]">{item.source} · {item.time}</p>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -1732,7 +1962,7 @@ function QuickReportStatusScreen({ report, onAddDetails, onRetry, onHistory }: {
             : <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />}
         <div>
           <p className={`text-sm font-semibold ${isFailed ? "text-[#9f271f]" : "text-[#135b39]"}`}>{isFailed ? "Quick report not sent" : isSending ? "Quick report sending" : "Quick report sent"}</p>
-          <p className="mt-1 text-xs text-[#53645a]">{isFailed ? "The local submission failed. Retry the same report to try again." : "This status is held in the local demonstration."}</p>
+          <p className="mt-1 text-xs text-[#53645a]">{isFailed ? "The submission failed. Retry the same report to try again." : "Reference details are shown below."}</p>
         </div>
       </Panel>
       <Panel className="space-y-4">
@@ -1822,7 +2052,6 @@ function CategoryScreen({
       </div>
       {error && <p role="alert" className="text-xs text-[#b42318]">{error}</p>}
       {!quick && <Button onClick={onContinue} disabled={!selected} className="w-full">Continue <ChevronRight className="h-4 w-4" /></Button>}
-      {!quick && <Panel className="flex items-start gap-2.5 bg-[#f2f8f3] p-3 text-xs text-[#52645a]"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" /><p>Incident reports are stored as local demonstration data in this app.</p></Panel>}
     </div>
   );
 }
@@ -1993,13 +2222,11 @@ function ReviewScreen({
   errors,
   onEdit,
   onSubmit,
-  onSimulateFailure,
 }: {
   draft: IncidentDraft;
   errors: Record<string, string>;
   onEdit: (target: Screen) => void;
   onSubmit: () => void;
-  onSimulateFailure: () => void;
 }) {
   const category = categoryFor(draft.category);
   const date = draft.dateTime ? new Date(draft.dateTime).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Not provided";
@@ -2022,9 +2249,7 @@ function ReviewScreen({
           <button onClick={() => onEdit(step)} className="text-[11px] font-semibold text-[#087443]">Edit</button>
         </Panel>
       ))}
-      <p className="flex items-start gap-2 rounded-xl bg-[#f1f7f2] p-3 text-[11px] text-[#53645a]"><Info className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />Submitting creates a local demo report; it is not sent to a live NSIA service.</p>
       <Button onClick={onSubmit} className="w-full">Submit report</Button>
-      <button onClick={onSimulateFailure} className="w-full py-2 text-xs text-[#66736b] underline decoration-dotted underline-offset-2">Preview the unavailable state</button>
     </div>
   );
 }
@@ -2050,7 +2275,6 @@ function ReportResultScreen({ report, onReports, onHome }: { report: Report; onR
         <p className="mt-1 text-sm font-semibold text-[#26372c]">{report.id}</p>
         <div className="mt-4 border-t border-[#e7ece8] pt-3"><p className="text-[10px] text-[#718078]">Current status</p><div className="mt-1 flex items-center gap-2"><StatusPill>{report.status}</StatusPill><span className="text-[10px] text-[#718078]">{report.dateTime}</span></div></div>
       </Panel>
-      <p className="mt-3 text-[10px] text-[#77837a]">Demo report saved locally. It was not sent to a live service.</p>
       <Button onClick={onReports} className="mt-5 w-full">View my reports</Button>
       <Button onClick={onHome} variant="quiet" className="mt-2 w-full">Back to Home</Button>
     </div>
@@ -2077,7 +2301,6 @@ function ReportsScreen({
   onFilter,
   onSelect,
   onCreate,
-  onPreviewUnavailable,
 }: {
   reports: Report[];
   quickReports: QuickReport[];
@@ -2087,7 +2310,6 @@ function ReportsScreen({
   onFilter: (filter: string) => void;
   onSelect: (report: ReportListEntry) => void;
   onCreate: () => void;
-  onPreviewUnavailable: () => void;
 }) {
   const filters = ["All", "Active", "Resolved"];
   const query = search.trim().toLowerCase();
@@ -2155,8 +2377,6 @@ function ReportsScreen({
         <p className="mt-1 text-xs text-[#718078]">{entries.length ? "Try a different search or filter." : "Reports you submit will appear here."}</p>
       </div>}
       <Button onClick={onCreate} variant="quiet" className="w-full"><Plus className="h-4 w-4" />Report an incident</Button>
-      <p className="text-center text-[11px] text-[#829087]">Your reports are stored in this local session.</p>
-      <button onClick={onPreviewUnavailable} className="mx-auto block min-h-10 px-2 text-[11px] text-[#748077] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-[#087443]">Preview unavailable state</button>
     </div>
   );
 }
@@ -2192,7 +2412,6 @@ function ReportDetailScreen({ report, onHistory, onSupplement }: { report: Repor
       </section>}
       <Button onClick={onHistory} className="w-full">View full timeline <ChevronRight className="h-4 w-4" /></Button>
       <Button variant="quiet" onClick={onSupplement} className="w-full"><Plus className="h-4 w-4" />Add supplementary information</Button>
-      <p className="text-center text-[11px] text-[#829087]">Report details are saved in this local session.</p>
     </div>
   );
 }
@@ -2240,7 +2459,6 @@ function SupplementaryInformationScreen({
   onFilesChange,
   onSubmit,
   onCancel,
-  onPreviewFailure,
 }: {
   report: Report;
   text: string;
@@ -2251,7 +2469,6 @@ function SupplementaryInformationScreen({
   onFilesChange: (files: File[]) => void;
   onSubmit: () => void;
   onCancel: () => void;
-  onPreviewFailure: () => void;
 }) {
   const [attachmentError, setAttachmentError] = useState("");
 
@@ -2303,12 +2520,10 @@ function SupplementaryInformationScreen({
         {attachmentError && <p role="alert" className="text-xs text-[#b42318]">{attachmentError}</p>}
       </div>
       <p className="flex items-start gap-2 text-xs leading-5 text-[#52645a]"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />Share only relevant information. Avoid unnecessary sensitive personal or medical details.</p>
-      <p className="text-xs text-[#66736b]">Saved locally in this demonstration; attachments are not uploaded to a live service.</p>
       <div className="space-y-2 pt-1">
         <Button onClick={onSubmit} disabled={saving} className="w-full">{saving ? <><LoaderCircle className="h-4 w-4 animate-spin" />Sending…</> : "Send supplementary information"}</Button>
         <Button variant="secondary" onClick={onCancel} disabled={saving} className="w-full">Cancel</Button>
       </div>
-      <button type="button" onClick={onPreviewFailure} disabled={saving} className="mx-auto block min-h-10 px-2 text-[11px] text-[#748077] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-[#087443]">Preview submission failure</button>
     </div>
   );
 }
@@ -2318,7 +2533,7 @@ function SupplementarySuccessScreen({ report, onReport }: { report?: Report; onR
     <div className="flex min-h-[440px] flex-col items-center justify-center py-8 text-center">
       <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[#dff4e4] text-[#087443]"><CheckCircle2 className="h-9 w-9" /></span>
       <h2 className="mt-4 text-lg font-semibold text-[#18231d]">Information added</h2>
-      <p className="mt-2 text-xs leading-5 text-[#66736b]">The update has been added to {report?.id ?? "your report"} in this local session.</p>
+      <p className="mt-2 text-xs leading-5 text-[#66736b]">The update has been added to {report?.id ?? "your report"}.</p>
       <Button onClick={onReport} className="mt-6 w-full">Back to report details</Button>
     </div>
   );
@@ -2328,7 +2543,7 @@ function DetailRow({ icon, label, value }: { icon: ReactNode; label: string; val
   return <div className="flex gap-3"><span className="mt-0.5 text-[#087443] [&>svg]:h-4 [&>svg]:w-4">{icon}</span><span className="min-w-0"><span className="block text-[10px] text-[#758178]">{label}</span><span className="mt-0.5 block break-words text-xs text-[#26372c]">{value}</span></span></div>;
 }
 
-function AlertsScreen({ alerts, onSelect, onPreviewEmpty, onPreviewUnavailable }: { alerts: Alert[]; onSelect: (alert: Alert) => void; onPreviewEmpty: () => void; onPreviewUnavailable: () => void }) {
+function AlertsScreen({ alerts, onSelect }: { alerts: Alert[]; onSelect: (alert: Alert) => void }) {
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const filters = ["All", "Safety", "Access", "Security"];
@@ -2357,8 +2572,6 @@ function AlertsScreen({ alerts, onSelect, onPreviewEmpty, onPreviewUnavailable }
         })}
         {visible.length === 0 && <p className="px-4 py-10 text-center text-xs text-[#748077]">No alerts match this search or category.</p>}
       </div>
-      <p className="text-center text-[10px] text-[#829087]">Illustrative alerts; not a live organisation feed.</p>
-      <div className="flex justify-center gap-4"><button onClick={onPreviewEmpty} className="min-h-10 px-2 text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview no active alerts</button><button onClick={onPreviewUnavailable} className="min-h-10 px-2 text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview unavailable</button></div>
     </div>
   );
 }
@@ -2399,7 +2612,6 @@ function AlertDetailScreen({ alert, onAcknowledge }: { alert: Alert; onAcknowled
         : <p className="rounded-xl bg-[#f3f6f4] p-3 text-xs text-[#647269]">No acknowledgement is required for this alert.</p>}
       {alert.requiresAcknowledgement && !alert.acknowledged && <Button onClick={onAcknowledge} className="w-full">Acknowledge alert</Button>}
       {alert.classification === "Shareable" && <><Button variant="secondary" onClick={shareAlert} className="w-full"><ExternalLink className="h-4 w-4" />Share alert</Button>{shareFeedback && <p role="status" className="text-center text-[11px] text-[#66736b]">{shareFeedback}</p>}</>}
-      <p className="text-center text-[10px] text-[#829087]">Illustrative organisation alert. Follow verified channels for live information.</p>
     </div>
   );
 }
@@ -2416,12 +2628,10 @@ function AlertAcknowledgedScreen({ alert, onBack }: { alert: Alert; onBack: () =
   );
 }
 
-function NotificationsScreen({ items, read, onSelect, onPreviewEmpty, onPreviewUnavailable }: {
+function NotificationsScreen({ items, read, onSelect }: {
   items: NotificationItem[];
   read: string[];
   onSelect: (item: NotificationItem) => void;
-  onPreviewEmpty: () => void;
-  onPreviewUnavailable: () => void;
 }) {
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -2452,8 +2662,6 @@ function NotificationsScreen({ items, read, onSelect, onPreviewEmpty, onPreviewU
         })}
         {sortedItems.length === 0 && <p className="px-4 py-10 text-center text-xs text-[#748077]">{items.length ? "No notifications match this search or category." : "No system notifications yet."}</p>}
       </div>
-      <p className="text-center text-[10px] text-[#829087]">Illustrative system notices; report updates use this session&apos;s report data.</p>
-      <div className="flex justify-center gap-4"><button onClick={onPreviewEmpty} className="min-h-10 px-2 text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview empty state</button><button onClick={onPreviewUnavailable} className="min-h-10 px-2 text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview unavailable</button></div>
     </div>
   );
 }
@@ -2485,7 +2693,7 @@ function NotificationDetailScreen({ item, isRead, relatedReport, hasRelatedRepor
   );
 }
 
-function FeedScreen({ items, onSelect, onPreviewEmpty, onPreviewUnavailable }: { items: FeedItem[]; onSelect: (item: FeedItem) => void; onPreviewEmpty: () => void; onPreviewUnavailable: () => void }) {
+function FeedScreen({ items, onSelect }: { items: FeedItem[]; onSelect: (item: FeedItem) => void }) {
   const [filter, setFilter] = useState("All");
   const filters = ["All", "Security", "Safety", "Health"];
   const visible = filter === "All" ? items : items.filter((item) => {
@@ -2503,9 +2711,51 @@ function FeedScreen({ items, onSelect, onPreviewEmpty, onPreviewUnavailable }: {
         <span className="mt-2 block pl-12 text-[9px] font-medium text-[#087443]">{item.classification}</span>
       </button>)}
       {visible.length === 0 && <p className="py-12 text-center text-xs text-[#748077]">No feed items in this category.</p>}
-      <p className="text-center text-[10px] text-[#829087]">Illustrative content. This feed is not live.</p>
-      <div className="flex justify-center gap-4"><button onClick={onPreviewEmpty} className="text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview empty state</button><button onClick={onPreviewUnavailable} className="text-[10px] text-[#748077] underline decoration-dotted underline-offset-2">Preview unavailable</button></div>
     </div>
+  );
+}
+
+function FeedIllustration({ topic }: { topic: FeedItem["topic"] }) {
+  if (topic === "weather") {
+    return (
+      <svg viewBox="0 0 400 200" className="h-full w-full" preserveAspectRatio="xMidYMid slice" role="presentation">
+        <rect width="400" height="200" fill="#e7f0fb" />
+        <circle cx="325" cy="48" r="26" fill="#d2e3f8" />
+        <g fill="#9fbbdf"><ellipse cx="150" cy="82" rx="72" ry="38" /><ellipse cx="212" cy="70" rx="55" ry="34" /><ellipse cx="98" cy="92" rx="50" ry="30" /></g>
+        <g stroke="#6f93c2" strokeWidth="4" strokeLinecap="round"><line x1="88" y1="132" x2="72" y2="164" /><line x1="128" y1="138" x2="112" y2="172" /><line x1="168" y1="132" x2="152" y2="164" /><line x1="210" y1="138" x2="194" y2="172" /><line x1="248" y1="130" x2="234" y2="160" /></g>
+        <rect x="0" y="182" width="400" height="18" fill="#d6e4f4" />
+      </svg>
+    );
+  }
+  if (topic === "traffic") {
+    return (
+      <svg viewBox="0 0 400 200" className="h-full w-full" preserveAspectRatio="xMidYMid slice" role="presentation">
+        <rect width="400" height="200" fill="#fdf2e0" />
+        <rect x="0" y="58" width="400" height="92" fill="#7d8286" />
+        <line x1="0" y1="104" x2="400" y2="104" stroke="#ffffff" strokeWidth="5" strokeDasharray="22 18" />
+        <rect x="55" y="76" width="50" height="26" rx="7" fill="#e07a1f" />
+        <rect x="155" y="114" width="54" height="28" rx="7" fill="#c0362a" />
+        <rect x="260" y="74" width="50" height="26" rx="7" fill="#2b6b4a" />
+        <rect x="0" y="150" width="400" height="50" fill="#f6e3c2" />
+      </svg>
+    );
+  }
+  if (topic === "health") {
+    return (
+      <svg viewBox="0 0 400 200" className="h-full w-full" preserveAspectRatio="xMidYMid slice" role="presentation">
+        <rect width="400" height="200" fill="#fdecec" />
+        <circle cx="200" cy="100" r="66" fill="#ffd9d9" />
+        <rect x="180" y="62" width="40" height="78" rx="8" fill="#c0362a" />
+        <rect x="161" y="81" width="78" height="40" rx="8" fill="#c0362a" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 400 200" className="h-full w-full" preserveAspectRatio="xMidYMid slice" role="presentation">
+      <rect width="400" height="200" fill="#e7f3ec" />
+      <path d="M200 42 L258 62 V110 C258 148 230 171 200 180 C170 171 142 148 142 110 V62 Z" fill="#087443" />
+      <path d="M186 110 L197 121 L218 95" stroke="#ffffff" strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -2530,13 +2780,14 @@ function FeedDetailScreen({ item }: { item: FeedItem }) {
 
   return (
     <div className="space-y-4 py-4">
+      <div className="h-44 overflow-hidden rounded-2xl"><FeedIllustration topic={item.topic} /></div>
       <StatusPill tone={item.classification === "Shareable" ? "green" : "gray"}>{item.classification}</StatusPill>
       <h2 className="text-lg font-semibold leading-snug text-[#203127]">{item.title}</h2>
       <p className="text-[11px] text-[#748077]">{item.source} · {item.time}</p>
-      <div className="flex h-40 items-center justify-center rounded-2xl bg-[#e9f1eb] text-[#6d8074]"><Radio className="h-8 w-8" /></div>
-      <Panel><p className="text-sm leading-6 text-[#3e5045]">{item.description}</p></Panel>
+      <Panel className="space-y-3">
+        {item.body.map((paragraph, index) => <p key={index} className="text-sm leading-6 text-[#3e5045]">{paragraph}</p>)}
+      </Panel>
       {item.classification === "Shareable" && <><Button variant="secondary" onClick={shareItem} className="w-full"><ExternalLink className="h-4 w-4" />Share externally</Button>{shareFeedback && <p role="status" className="text-center text-[11px] text-[#66736b]">{shareFeedback}</p>}</>}
-      <p className="text-center text-[10px] text-[#829087]">Source information is illustrative; no live publisher connection is configured.</p>
     </div>
   );
 }
@@ -2555,9 +2806,8 @@ function SosProcessingScreen({ event }: { event: SosEvent }) {
         <p className="text-xs font-semibold text-[#26372c]">Activation progress</p>
         <ContactStatus name="Local SOS event" status={`Recorded · ${event.reference}`} done />
         <ContactStatus name="Event location" status={event.location} done={locationReady} />
-        <ContactStatus name="Contact notification" status="Not sent in this local preview" done={false} />
+        <ContactStatus name="Contact notification" status="Pending" done={false} />
       </Panel>
-      <p role="status" className="rounded-xl bg-[#edf5ef] p-3 text-center text-[11px] leading-5 text-[#526158]">Keep this screen available while the local activation result is prepared. No contact notification is being sent.</p>
     </div>
   );
 }
@@ -2568,14 +2818,13 @@ function SosOutcomeScreen({ event, onStatus, onHome }: { event: SosEvent; onStat
       <section className="flex flex-col items-center text-center">
         <span className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-[#dff4e4] text-[#087443]"><CheckCircle2 className="h-9 w-9" /></span>
         <h2 className="mt-4 text-lg font-semibold text-[#1d2d24]">SOS request activated</h2>
-        <p className="mt-1 max-w-[290px] text-xs leading-5 text-[#66736b]">The request was recorded in this app session. This local preview did not notify contacts.</p>
+        <p className="mt-1 max-w-[290px] text-xs leading-5 text-[#66736b]">Your request has been recorded.</p>
       </section>
       <Panel className="space-y-3">
         <p className="text-xs font-semibold text-[#26372c]">Request details</p>
         <DetailRow icon={<FileText />} label="Local reference" value={event.reference} />
         <DetailRow icon={<CalendarDays />} label="Recorded" value={new Date(event.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
         <DetailRow icon={<MapPin />} label="Event location" value={event.location} />
-        <p className="rounded-lg bg-[#f5f7f5] p-2.5 text-[11px] leading-4 text-[#526158]">Contact notification: not sent in this preview.</p>
       </Panel>
       <Button onClick={onStatus} className="w-full">View SOS status<ChevronRight className="h-4 w-4" /></Button>
       <Button onClick={onHome} variant="secondary" className="w-full">Return to Home</Button>
@@ -2611,7 +2860,6 @@ function SosSentScreen({
       <div className="flex flex-col items-center text-center">
         <span className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-[#dff4e4] text-[#087443]"><CheckCircle2 className="h-10 w-10" /></span>
         <h2 className="mt-4 text-lg font-semibold text-[#1d2d24]">Contact notification status</h2>
-        <p className="mt-1 text-xs text-[#66736b]">Request recorded locally; no contact notification was sent.</p>
       </div>
       <Panel className="space-y-3">
         <p className="text-xs font-semibold text-[#26372c]">Emergency event</p>
@@ -2624,7 +2872,6 @@ function SosSentScreen({
           done={acknowledged}
         />
         {secondary && <ContactStatus name={secondary.name} status="Not notified" done={false} />}
-        <p className="border-t border-[#e5ebe6] pt-3 text-[10px] leading-4 text-[#6a786f]">No emergency services have been contacted. No assistance dispatch is claimed.</p>
       </Panel>
       <Button onClick={onHome} variant="secondary" className="w-full">{homeLabel}</Button>
     </div>
@@ -2704,7 +2951,6 @@ function ProfileScreen({
   onEdit,
   onSosHistory,
   onSettings,
-  onRestartSession,
 }: {
   profile: StaffProfile;
   contactCount: number;
@@ -2715,7 +2961,6 @@ function ProfileScreen({
   onEdit: () => void;
   onSosHistory: () => void;
   onSettings: () => void;
-  onRestartSession: () => void;
 }) {
   const initials = profile.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   return (
@@ -2750,10 +2995,6 @@ function ProfileScreen({
         <ProfileAction icon={Siren} title="SOS history" description={sosHistoryCount > 0 ? `${sosHistoryCount} request${sosHistoryCount === 1 ? "" : "s"} sent` : "No SOS requests yet"} onClick={onSosHistory} />
         <ProfileAction icon={Settings} title="Settings" description="Preferences, permissions and app information" onClick={onSettings} last />
       </section>
-      <button onClick={onRestartSession} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#eff7e9] px-4 py-2.5 text-sm font-semibold text-[#087443] hover:bg-[#e7f2df] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">
-        <RotateCcw className="h-4 w-4" />Start fresh session
-      </button>
-      <p className="text-center text-[11px] text-[#829087]">Example profile for demonstration.</p>
     </div>
   );
 }
@@ -3143,7 +3384,6 @@ function PermissionsScreen() {
           <MapPin className="h-5 w-5 shrink-0 text-[#087443]" />
           <div className="min-w-0 flex-1"><p className="text-[13px] font-medium text-[#18231d]">Location</p><p aria-live="polite" className="mt-0.5 text-xs text-[#66736b]">{locationStatus[locationPermission]}</p></div>
         </div>
-        <p className="mt-2 pl-8 text-xs leading-4 text-[#66736b]">ICE currently uses a demonstration location and does not request your location.</p>
         <p className="mt-3 text-xs leading-5 text-[#66736b]">Permissions are controlled by your browser or device. ICE does not currently request location or camera access.</p>
         <p className="mt-2 text-xs leading-5 text-[#66736b]">You can review or change permissions in your browser&apos;s site settings.</p>
       </section>
@@ -3215,6 +3455,67 @@ function ContactForm({
       <Button type="submit" className="w-full">{editing ? "Save changes" : "Add contact"}</Button>
       <Button variant="secondary" onClick={onCancel} className="w-full">Cancel</Button>
     </form>
+  );
+}
+
+function HelpContactsScreen({ contacts, onSelect }: { contacts: HelpContact[]; onSelect: (contact: HelpContact) => void }) {
+  return (
+    <div className="space-y-4 py-4">
+      <div>
+        <h2 className="text-lg font-semibold text-[#087443]">Help contacts.</h2>
+        <p className="mt-1 text-xs leading-5 text-[#66736b]">Call a configured service for immediate assistance.</p>
+      </div>
+      <div className="space-y-3">
+        {contacts.map((contact) => {
+          const Icon = contact.icon;
+          return (
+            <Panel key={contact.id} className="space-y-3">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f1f7f2] text-[#087443]"><Icon className="h-5 w-5" /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-[#1d2d24]">{contact.name}</h3>
+                    <button onClick={() => onSelect(contact)} className="shrink-0 text-[11px] font-semibold text-[#087443]">Details</button>
+                  </div>
+                  <p className="mt-1 break-words text-xs text-[#66736b]">{contact.org} · {contact.phone} · {contact.hours}</p>
+                </div>
+              </div>
+              <Button onClick={() => callNumber(contact.phone)} className="w-full"><Phone className="h-4 w-4" />Call {contact.name}</Button>
+            </Panel>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HelpContactDetailScreen({ contact, onBack }: { contact: HelpContact; onBack: () => void }) {
+  const Icon = contact.icon;
+  return (
+    <div className="space-y-4 py-4">
+      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#f1f7f2] text-[#087443]"><Icon className="h-8 w-8" /></span>
+      <div>
+        <h2 className="text-xl font-semibold text-[#18231d]">{contact.name}</h2>
+        <div className="mt-2"><StatusPill>{contact.org}</StatusPill></div>
+      </div>
+      <Panel className="space-y-2">
+        <p className="text-lg font-semibold text-[#1d2d24]">{contact.phone}</p>
+        <div><StatusPill tone="green">{contact.hours}</StatusPill></div>
+      </Panel>
+      <div>
+        <h3 className="text-sm font-semibold text-[#1d2d24]">When to contact</h3>
+        <p className="mt-1 text-xs leading-5 text-[#66736b]">{contact.whenToContact}</p>
+      </div>
+      <Panel>
+        <p className="text-[10px] text-[#758178]">Department</p>
+        <p className="mt-0.5 text-xs text-[#26372c]">{contact.department} · {contact.departmentNote}</p>
+      </Panel>
+      <Panel className="bg-[#f1f7f2]">
+        <p className="text-xs leading-5 text-[#26372c]">{contact.guidance}</p>
+      </Panel>
+      <Button onClick={() => callNumber(contact.phone)} className="w-full"><Phone className="h-4 w-4" />Call {contact.name}</Button>
+      <Button variant="quiet" onClick={onBack} className="w-full">Back to Help Contacts</Button>
+    </div>
   );
 }
 
