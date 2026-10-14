@@ -1271,7 +1271,7 @@ export default function ICEApp() {
         {title && !isLoginScreen && <ScreenHeader title={title} onBack={back} showBack={screen !== "profile"} />}
         <div className={`ice-content min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${isLoginScreen ? "" : "px-4 pb-4"}`}>
           {screen === "signIn" && <MicrosoftSignInScreen onContinue={simulateSignIn} />}
-          {screen === "signInLoading" && <LoadingScreen icon={<ShieldCheck />} title="Signing in to ICE" />}
+          {screen === "signInLoading" && <LoadingScreen icon={<ShieldCheck />} title="Signing in to ICE" detail="Please wait while we authenticate your account." />}
           {screen === "firstLoginWelcome" && <FirstLoginWelcomeScreen onContinue={completeFirstLoginWelcome} />}
           {screen === "home" && (
             <HomeScreen
