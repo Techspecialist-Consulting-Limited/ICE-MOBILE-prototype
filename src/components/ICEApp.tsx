@@ -38,7 +38,6 @@ import {
   Search,
   Settings,
   Send,
-  Smartphone,
   ShieldCheck,
   Siren,
   Stethoscope,
@@ -95,7 +94,6 @@ type Screen =
   | "profile"
   | "editProfile"
   | "settings"
-  | "notificationSettings"
   | "permissions"
   | "settingsInfo"
   | "contacts"
@@ -113,7 +111,10 @@ type IncidentCategory = {
   color: string;
 };
 
+type ReportType = "emergency" | "incident";
+
 type IncidentDraft = {
+  reportType: ReportType;
   category: string;
   summary: string;
   description: string;
@@ -133,6 +134,7 @@ type ReportEvidence = {
 type Report = {
   id: string;
   createdAt: string;
+  reportType: "Emergency Report" | "Incident Report";
   category: string;
   summary: string;
   description: string;
@@ -145,6 +147,7 @@ type Report = {
 };
 
 type ReportListEntry = Pick<Report, "id" | "createdAt" | "category" | "summary" | "location" | "dateTime" | "status"> & {
+  reportType: "Emergency Report" | "Incident Report";
   quickReportKey?: string;
 };
 
@@ -252,13 +255,6 @@ type StaffProfile = {
   emergencyMedicalNotes: string;
   profilePhoto?: string;
 };
-
-type NotificationPreferences = {
-  incidentUpdates: boolean;
-  safetyInformation: boolean;
-};
-
-type PushPermission = "checking" | "granted" | "denied" | "default" | "unavailable";
 
 const initialStaffProfile: StaffProfile = {
   fullName: "Mike Kanu",
@@ -523,6 +519,7 @@ const helpContacts: HelpContact[] = [
 ];
 
 const emptyDraft: IncidentDraft = {
+  reportType: "emergency",
   category: "",
   summary: "",
   description: "",
@@ -574,7 +571,6 @@ const screenTitles: Partial<Record<Screen, string>> = {
   profile: "Profile",
   editProfile: "Edit profile",
   settings: "Settings",
-  notificationSettings: "Notification settings",
   permissions: "Permissions",
   settingsInfo: "Settings",
   contacts: "Emergency contacts",
@@ -718,6 +714,7 @@ export default function ICEApp() {
   const [quickDetailsErrors, setQuickDetailsErrors] = useState<Record<string, string>>({});
   const [quickDetailsSaving, setQuickDetailsSaving] = useState(false);
   const [quickCategoryChoiceId, setQuickCategoryChoiceId] = useState<string | null>(null);
+  const [reportTypeSheetOpen, setReportTypeSheetOpen] = useState(false);
   const quickSendLock = useRef(false);
   const quickSaveLock = useRef(false);
   const [quickEvidenceObjectUrls] = useState(() => new Set<string>());
@@ -734,11 +731,7 @@ export default function ICEApp() {
   const [contacts, setContacts] = useState(initialContacts);
   const [selectedHelpContactId, setSelectedHelpContactId] = useState(helpContacts[0].id);
   const [staffProfile, setStaffProfile] = useState(initialStaffProfile);
-  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>({
-    incidentUpdates: true,
-    safetyInformation: true,
-  });
-  const [settingsInfo, setSettingsInfo] = useState({ title: "", description: "" });
+  const [settingsInfo, setSettingsInfo] = useState<{ title: string; description: string[]; contactEmail?: string }>({ title: "", description: [] });
   const [profileSaved, setProfileSaved] = useState(false);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState({ name: "", relationship: "", phone: "", priority: "Tertiary" as EmergencyContact["priority"] });
@@ -1066,6 +1059,7 @@ export default function ICEApp() {
       const newReport: Report = {
         id: `INC-2026-${String(sequence).padStart(6, "0")}`,
         createdAt: new Date().toISOString(),
+        reportType: draft.reportType === "incident" ? "Incident Report" : "Emergency Report",
         category: categoryFor(draft.category).label,
         summary: draft.summary.trim(),
         description: draft.description.trim(),
@@ -1246,8 +1240,8 @@ export default function ICEApp() {
     }, 500);
   }
 
-  function openSettingsInfo(title: string, description: string) {
-    setSettingsInfo({ title, description });
+  function openSettingsInfo(title: string, description: string[], contactEmail?: string) {
+    setSettingsInfo({ title, description, contactEmail });
     go("settingsInfo");
   }
 
@@ -1309,7 +1303,7 @@ export default function ICEApp() {
             onHistory={() => go("quickReportHistory")}
           />}
           {screen === "quickReportHistory" && selectedQuickReport && <QuickReportHistoryScreen report={selectedQuickReport} onBack={back} />}
-          {screen === "reportDetails" && <ReportDetailsScreen draft={draft} errors={draftErrors} onChange={patchDraft} onChooseCategory={() => go("categories")} onBack={back} onNext={() => validateReportDetails() && go("reportLocation")} />}
+          {screen === "reportDetails" && <ReportDetailsScreen draft={draft} errors={draftErrors} onChange={patchDraft} onChooseCategory={() => go("categories")} onOpenReportTypeSheet={() => setReportTypeSheetOpen(true)} onBack={back} onNext={() => validateReportDetails() && go("reportLocation")} />}
           {screen === "reportLocation" && <LocationScreen draft={draft} errors={draftErrors} onChange={patchDraft} onNext={() => validateLocation() && go("reportEvidence")} onBack={back} />}
           {screen === "reportEvidence" && <EvidenceScreen draft={draft} onChange={patchDraft} onNext={() => go("reportReview")} />}
           {screen === "reportReview" && <ReviewScreen draft={draft} errors={draftErrors} onEdit={(target) => go(target)} onSubmit={() => finishReport()} />}
@@ -1375,16 +1369,11 @@ export default function ICEApp() {
           />}
           {screen === "editProfile" && <EditProfileScreen profile={staffProfile} onCancel={back} onSave={saveStaffProfile} />}
           {screen === "settings" && <SettingsScreen
-            onNotifications={() => go("notificationSettings")}
             onPermissions={() => go("permissions")}
             onOpenInfo={openSettingsInfo}
           />}
-          {screen === "notificationSettings" && <NotificationSettingsScreen
-            preferences={notificationPreferences}
-            onChange={setNotificationPreferences}
-          />}
           {screen === "permissions" && <PermissionsScreen />}
-          {screen === "settingsInfo" && <SettingsInfoScreen description={settingsInfo.description} />}
+          {screen === "settingsInfo" && <SettingsInfoScreen description={settingsInfo.description} contactEmail={settingsInfo.contactEmail} />}
           {screen === "contacts" && <ContactsScreen contacts={contacts} onAdd={() => editContact()} onEdit={editContact} onDelete={(id) => setContacts((previous) => previous.filter((contact) => contact.id !== id))} />}
           {screen === "contactEdit" && <ContactForm draft={contactDraft} error={contactError} editing={Boolean(editingContactId)} onChange={setContactDraft} onSave={saveContact} onCancel={back} />}
           {screen === "helpContacts" && <HelpContactsScreen contacts={helpContacts} onSelect={(contact) => { setSelectedHelpContactId(contact.id); go("helpContactDetail"); }} />}
@@ -1398,6 +1387,13 @@ export default function ICEApp() {
             onClose={() => setQuickCategoryChoiceId(null)}
             onSendNow={confirmQuickReportSend}
             onSendWithDetails={chooseQuickReportDetails}
+          />
+        )}
+        {reportTypeSheetOpen && (
+          <ReportTypeSheet
+            value={draft.reportType}
+            onSelect={(value) => { patchDraft({ reportType: value }); setReportTypeSheetOpen(false); }}
+            onClose={() => setReportTypeSheetOpen(false)}
           />
         )}
       </div>
@@ -1615,7 +1611,7 @@ function AlertCarousel({
             <button
               key={alert.id}
               onClick={() => onSelect(alert)}
-              className={`flex w-[86%] shrink-0 snap-start flex-col gap-2 rounded-2xl border ${tone.border} ${tone.bg} p-3.5 text-left`}
+              className={`flex w-[86%] shrink-0 snap-start flex-col gap-1.5 rounded-2xl border ${tone.border} ${tone.bg} p-3 text-left`}
             >
               <div className="flex items-start gap-2.5">
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tone.iconBg} ${tone.iconColor}`}><Icon className="h-5 w-5" /></span>
@@ -1628,7 +1624,7 @@ function AlertCarousel({
                   <p className="mt-1 line-clamp-2 text-[13px] font-semibold leading-5 text-[#27332b]">{alert.title}</p>
                 </div>
               </div>
-              <p className="line-clamp-2 text-[11px] leading-4 text-[#5c6a61]">{alert.description}</p>
+              <p className="line-clamp-1 text-[11px] leading-4 text-[#5c6a61]">{alert.description}</p>
               <div className="mt-auto flex items-center justify-between gap-2 text-[10px] text-[#6b7971]">
                 <span className="truncate">{alert.affectedArea}</span>
                 <span className="flex shrink-0 items-center gap-1 font-semibold text-[#087443]">Details <ChevronRight className="h-3 w-3" /></span>
@@ -1727,12 +1723,12 @@ function HomeScreen({
       </div>
       <div className="flex gap-2.5 overflow-x-auto pb-1">
         {feed.slice(0, 4).map((item) => (
-          <button key={item.id} onClick={() => onFeedSelect(item)} className="flex w-[70%] shrink-0 flex-col gap-2 rounded-2xl border border-[#e1e8e2] bg-white p-3 text-left">
-            <div className="flex items-start gap-2.5">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#edf5ef] text-[#087443]"><Newspaper className="h-4 w-4" /></span>
+          <button key={item.id} onClick={() => onFeedSelect(item)} className="flex w-[70%] shrink-0 flex-col gap-1.5 rounded-2xl border border-[#e1e8e2] bg-white p-2.5 text-left">
+            <div className="flex items-start gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#edf5ef] text-[#087443]"><Newspaper className="h-3.5 w-3.5" /></span>
               <p className="line-clamp-2 min-w-0 flex-1 text-[12px] font-semibold leading-5 text-[#24352b]">{item.title}</p>
             </div>
-            <p className="line-clamp-2 text-[11px] leading-4 text-[#5c6a61]">{item.description}</p>
+            <p className="line-clamp-1 text-[11px] leading-4 text-[#5c6a61]">{item.description}</p>
             <p className="text-[10px] text-[#829087]">{item.source} · {item.time}</p>
           </button>
         ))}
@@ -1813,6 +1809,93 @@ function QuickReportChoiceDialog({
         <button onClick={onClose} aria-label="Close report options" className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-[#65736a] hover:bg-[#edf3ee]">
           <X aria-hidden="true" className="h-4 w-4" />
         </button>
+      </section>
+    </div>
+  );
+}
+
+function ReportTypeSheet({
+  value,
+  onSelect,
+  onClose,
+}: {
+  value: ReportType;
+  onSelect: (value: ReportType) => void;
+  onClose: () => void;
+}) {
+  const sheetRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const sheet = sheetRef.current;
+    const firstAction = sheet?.querySelector<HTMLButtonElement>("button");
+    firstAction?.focus();
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !sheet) return;
+      const actions = Array.from(sheet.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+      const first = actions[0];
+      const last = actions[actions.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const options: { value: ReportType; label: string; hint: string }[] = [
+    { value: "emergency", label: "Emergency Report", hint: "This involves you directly and may need urgent assistance." },
+    { value: "incident", label: "Incident Report", hint: "You're reporting something you observed; it does not involve you directly." },
+  ];
+
+  return (
+    <div
+      className="absolute inset-0 z-50 flex items-end bg-[#14231a]/45"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="report-type-sheet-title"
+        className="w-full rounded-t-3xl border-t border-[#e1e8e2] bg-[#fbfcfb] p-4 pb-[max(16px,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(20,35,26,0.18)]"
+      >
+        <div aria-hidden="true" className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#dfe7e0]" />
+        <h2 id="report-type-sheet-title" className="px-1 text-sm font-semibold text-[#1d2d24]">Report type</h2>
+        <div className="mt-2 space-y-2">
+          {options.map((option) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onSelect(option.value)}
+                aria-pressed={selected}
+                className={`flex w-full items-start gap-3 rounded-2xl border p-3 text-left ${selected ? "border-[#71bd84] bg-[#f0f8f1]" : "border-[#e3ebe4] bg-white hover:bg-[#f7faf7]"}`}
+              >
+                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${selected ? "bg-[#087443] text-white" : "border-2 border-[#cbd5ce]"}`}>
+                  {selected && <Check className="h-3 w-3" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-[#1d2d24]">{option.label}</span>
+                  <span className="mt-0.5 block text-xs leading-4 text-[#66736b]">{option.hint}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" onClick={onClose} className="mt-3 flex min-h-11 w-full items-center justify-center rounded-xl bg-[#f0f3f1] text-sm font-semibold text-[#35463c] hover:bg-[#e7ebe8]">Cancel</button>
       </section>
     </div>
   );
@@ -2061,6 +2144,7 @@ function ReportDetailsScreen({
   errors,
   onChange,
   onChooseCategory,
+  onOpenReportTypeSheet,
   onBack,
   onNext,
 }: {
@@ -2068,6 +2152,7 @@ function ReportDetailsScreen({
   errors: Record<string, string>;
   onChange: (values: Partial<IncidentDraft>) => void;
   onChooseCategory: () => void;
+  onOpenReportTypeSheet: () => void;
   onBack: () => void;
   onNext: () => void;
 }) {
@@ -2075,6 +2160,15 @@ function ReportDetailsScreen({
   return (
     <div className="space-y-4 py-4">
       <Stepper step={2} />
+      {!draft.linkedQuickReportKey && (
+        <button type="button" onClick={onOpenReportTypeSheet} className="flex w-full items-center gap-3 rounded-xl border border-[#e1e8e2] bg-white p-3 text-left">
+          {draft.reportType === "incident"
+            ? <Info className="h-5 w-5 shrink-0 text-[#3470a8]" />
+            : <Siren className="h-5 w-5 shrink-0 text-[#c0362a]" />}
+          <span className="flex-1"><span className="block text-[10px] text-[#758178]">Report type</span><span className="text-sm font-semibold text-[#203127]">{draft.reportType === "incident" ? "Incident Report" : "Emergency Report"}</span></span>
+          <span className="text-[11px] font-semibold text-[#087443]">Change</span>
+        </button>
+      )}
       <button onClick={onChooseCategory} className="flex w-full items-center gap-3 rounded-xl border border-[#e1e8e2] bg-white p-3 text-left">
         <selected.icon className="h-5 w-5" style={{ color: selected.color }} />
         <span className="flex-1"><span className="block text-[10px] text-[#758178]">Category</span><span className="text-sm font-semibold text-[#203127]">{selected.label}</span></span>
@@ -2231,6 +2325,7 @@ function ReviewScreen({
   const category = categoryFor(draft.category);
   const date = draft.dateTime ? new Date(draft.dateTime).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Not provided";
   const rows: { label: string; value: ReactNode; step: Screen; icon: typeof FileText }[] = [
+    ...(draft.linkedQuickReportKey ? [] : [{ label: "Report type", value: draft.reportType === "incident" ? "Incident Report" : "Emergency Report", step: "reportDetails" as Screen, icon: draft.reportType === "incident" ? Info : Siren }]),
     { label: "Category", value: category.label, step: "categories", icon: category.icon },
     { label: "Summary", value: draft.summary || "Not provided", step: "reportDetails", icon: FileText },
     { label: "Description", value: draft.description || "Not provided", step: "reportDetails", icon: Info },
@@ -2273,7 +2368,7 @@ function ReportResultScreen({ report, onReports, onHome }: { report: Report; onR
       <Panel className="mt-6 w-full text-left">
         <p className="text-[10px] text-[#718078]">Reference number</p>
         <p className="mt-1 text-sm font-semibold text-[#26372c]">{report.id}</p>
-        <div className="mt-4 border-t border-[#e7ece8] pt-3"><p className="text-[10px] text-[#718078]">Current status</p><div className="mt-1 flex items-center gap-2"><StatusPill>{report.status}</StatusPill><span className="text-[10px] text-[#718078]">{report.dateTime}</span></div></div>
+        <div className="mt-4 border-t border-[#e7ece8] pt-3"><p className="text-[10px] text-[#718078]">Current status</p><div className="mt-1 flex flex-wrap items-center gap-2"><StatusPill>{report.status}</StatusPill><StatusPill tone={report.reportType === "Incident Report" ? "blue" : "red"}>{report.reportType}</StatusPill><span className="text-[10px] text-[#718078]">{report.dateTime}</span></div></div>
       </Panel>
       <Button onClick={onReports} className="mt-5 w-full">View my reports</Button>
       <Button onClick={onHome} variant="quiet" className="mt-2 w-full">Back to Home</Button>
@@ -2314,9 +2409,10 @@ function ReportsScreen({
   const filters = ["All", "Active", "Resolved"];
   const query = search.trim().toLowerCase();
   const entries: ReportListEntry[] = [
-    ...reports.map(({ id, createdAt, category, summary, location, dateTime, status }) => ({
+    ...reports.map(({ id, createdAt, reportType, category, summary, location, dateTime, status }) => ({
       id,
       createdAt,
+      reportType,
       category,
       summary,
       location,
@@ -2328,6 +2424,7 @@ function ReportsScreen({
       .map((report) => ({
         id: report.reference,
         createdAt: report.createdAt,
+        reportType: "Emergency Report" as const,
         category: report.category,
         summary: report.summary || `${report.category} quick report`,
         location: report.location ?? "",
@@ -2363,7 +2460,7 @@ function ReportsScreen({
             return <button key={report.quickReportKey ?? report.id} onClick={() => onSelect(report)} className={`flex min-h-[84px] w-full items-center gap-3 p-3 text-left hover:bg-[#f8faf8] focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#087443] ${index ? "border-t border-[#edf1ed]" : ""}`}>
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f0f6f1]" style={{ color: category.color }}><Icon className="h-5 w-5" strokeWidth={1.8} /></span>
               <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><StatusPill tone={tone}>{report.status}</StatusPill><span className="text-[11px] text-[#66736b]">{report.dateTime}</span></span>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><StatusPill tone={tone}>{report.status}</StatusPill><StatusPill tone={report.reportType === "Incident Report" ? "blue" : "red"}>{report.reportType}</StatusPill><span className="text-[11px] text-[#66736b]">{report.dateTime}</span></span>
                 <span className="mt-1 block break-words text-[13px] font-semibold text-[#18231d]">{report.summary}</span>
                 <span className="mt-0.5 block break-all text-[11px] text-[#66736b]">{report.id}{report.location ? ` · ${report.location}` : ""}</span>
               </span>
@@ -2391,7 +2488,10 @@ function ReportDetailScreen({ report, onHistory, onSupplement }: { report: Repor
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0f6f1]" style={{ color: category.color }}><Icon className="h-5 w-5" /></span>
           <div className="min-w-0 flex-1"><h2 className="break-words text-sm font-semibold text-[#18231d]">{report.summary}</h2><p className="mt-1 break-all text-xs text-[#66736b]">{report.id}</p><p className="mt-1 text-xs text-[#66736b]">Submitted {report.dateTime}</p></div>
-          <StatusPill tone={tone}>{report.status}</StatusPill>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <StatusPill tone={tone}>{report.status}</StatusPill>
+            <StatusPill tone={report.reportType === "Incident Report" ? "blue" : "red"}>{report.reportType}</StatusPill>
+          </div>
         </div>
       </section>
       <Panel className="space-y-4">
@@ -3221,23 +3321,37 @@ function profileInputClass(error = false) {
   return `h-[50px] w-full min-w-0 rounded-xl border ${error ? "border-[#d92d20]" : "border-[#dfe7e0]"} bg-white py-2.5 pl-10 pr-2 text-xs text-[#35463c] placeholder:text-[#a0aaa3] focus:border-[#087443] focus:outline-none focus:ring-2 focus:ring-[#087443]/15`;
 }
 
+const PRIVACY_TERMS_CONTENT = [
+  "ICE collects only the information needed to support your safety and incident reporting: your staff profile details, the incident reports and supplementary information you submit (including location, description, and any evidence you attach), your emergency contacts, and Personal Emergency Alert (SOS) requests.",
+  "This information is used solely to coordinate incident response, keep your emergency contacts informed when needed, and help NSIA's Risk Response and Security teams act quickly in an emergency. It is not used for performance monitoring, and it is not shared outside of these safety functions.",
+  "Reports and alert data are retained only for as long as needed to resolve an incident or respond to a request, and access is limited to authorized Risk Response and Security personnel.",
+  "By using ICE, you agree to use it for genuine safety and incident-reporting purposes, to keep your account credentials confidential, and to avoid including sensitive personal details in a report beyond what is relevant to the incident.",
+  "Questions about how your information is handled, or about these terms, can be directed to the Risk Response team.",
+];
+
+const SECURITY_SIGNIN_CONTENT = [
+  "Your ICE account is managed by NSIA through the organization's Active Directory (AD). Signing in uses your existing AD credentials, so ICE never stores or has access to your password.",
+  "Account security — including password resets, multi-factor authentication, and access removal — is handled centrally by NSIA IT through Active Directory. If you suspect unauthorized access to your account, or you're having trouble signing in, contact NSIA IT support.",
+];
+
+const HELP_SUPPORT_CONTENT = [
+  "ICE is supported by the Risk Response team. Reach out for guidance on using the app, reporting an issue, or any questions about incident reporting and safety features.",
+];
+
 function SettingsScreen({
-  onNotifications,
   onPermissions,
   onOpenInfo,
 }: {
-  onNotifications: () => void;
   onPermissions: () => void;
-  onOpenInfo: (title: string, description: string) => void;
+  onOpenInfo: (title: string, description: string[], contactEmail?: string) => void;
 }) {
   return (
     <div className="space-y-4 py-3">
       <section aria-label="Settings" className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
-        <ProfileAction icon={Bell} title="Notification settings" description="Manage alert and update preferences" onClick={onNotifications} />
         <ProfileAction icon={ShieldCheck} title="Permissions" description="Location, camera and device access" onClick={onPermissions} />
-        <ProfileAction icon={FileText} title="Privacy & terms" description="How ICE uses your information" onClick={() => onOpenInfo("Privacy & terms", "Privacy information and terms are not available in this app yet.")} />
-        <ProfileAction icon={CircleHelp} title="Help & support" description="Guidance and contact information" onClick={() => onOpenInfo("Help & support", "Help and support information is not available in this app yet.")} />
-        <ProfileAction icon={LockKeyhole} title="Security & sign-in" description="Organization account and session" onClick={() => onOpenInfo("Security & sign-in", "Account security options are not available in this app yet. Sign-in is currently a visual flow only.")} last />
+        <ProfileAction icon={FileText} title="Privacy & terms" description="How ICE uses your information" onClick={() => onOpenInfo("Privacy & terms", PRIVACY_TERMS_CONTENT)} />
+        <ProfileAction icon={CircleHelp} title="Help & support" description="Guidance and contact information" onClick={() => onOpenInfo("Help & support", HELP_SUPPORT_CONTENT, "risk@nsia.com")} />
+        <ProfileAction icon={LockKeyhole} title="Security & sign-in" description="Organization account and session" onClick={() => onOpenInfo("Security & sign-in", SECURITY_SIGNIN_CONTENT)} last />
       </section>
       <section className="rounded-2xl border border-[#e1e8e2] bg-white p-3">
         <div className="flex items-center gap-2 text-xs font-semibold text-[#35463c]"><Info className="h-4 w-4 text-[#087443]" />App information</div>
@@ -3245,102 +3359,6 @@ function SettingsScreen({
         <div className="mt-2 flex items-center justify-between text-xs"><span className="text-[#66736b]">Version</span><span className="font-medium text-[#35463c]">2.0</span></div>
       </section>
     </div>
-  );
-}
-
-function NotificationSettingsScreen({
-  preferences,
-  onChange,
-}: {
-  preferences: NotificationPreferences;
-  onChange: (preferences: NotificationPreferences) => void;
-}) {
-  const [pushPermission, setPushPermission] = useState<PushPermission>("checking");
-  const [showPermissionHelp, setShowPermissionHelp] = useState(false);
-
-  useEffect(() => {
-    const updatePermission = () => {
-      if (!("Notification" in window)) {
-        setPushPermission("unavailable");
-        return;
-      }
-      setPushPermission(window.Notification.permission);
-    };
-    const timer = window.setTimeout(updatePermission, 0);
-    window.addEventListener("focus", updatePermission);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("focus", updatePermission);
-    };
-  }, []);
-
-  const pushStatus: Record<PushPermission, string> = {
-    checking: "Checking device permission",
-    granted: "Allowed by browser",
-    denied: "Blocked by browser",
-    default: "Not yet allowed",
-    unavailable: "Not available in this browser",
-  };
-
-  return (
-    <div className="space-y-4 py-3">
-      <p className="text-sm font-semibold text-[#18231d]">Choose how ICE keeps you informed</p>
-      <section className="overflow-hidden rounded-2xl border border-[#e1e8e2] bg-white">
-        <div className="border-b border-[#edf1ed] bg-[#fffaf1] p-3">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#b42318]" />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2"><h2 className="text-[13px] font-semibold text-[#18231d]">Critical safety alerts</h2><StatusPill tone="amber">Required</StatusPill></div>
-              <p className="mt-1 text-xs leading-4 text-[#66736b]">High-risk alerts remain enabled under organization policy.</p>
-            </div>
-            <LockKeyhole aria-label="Required and locked" className="mt-0.5 h-4 w-4 shrink-0 text-[#66736b]" />
-          </div>
-        </div>
-        <NotificationToggleRow title="Incident updates" description="Updates on your reports and ongoing situations." checked={preferences.incidentUpdates} onChange={(checked) => onChange({ ...preferences, incidentUpdates: checked })} />
-        <NotificationToggleRow title="General safety information" description="Safety tips and awareness messages." checked={preferences.safetyInformation} onChange={(checked) => onChange({ ...preferences, safetyInformation: checked })} />
-        <div className="flex items-center gap-3 border-t border-[#edf1ed] p-3">
-          <BellRing className="h-5 w-5 shrink-0 text-[#087443]" />
-          <div className="min-w-0 flex-1"><p className="text-[13px] font-medium text-[#18231d]">System notices</p><p className="mt-0.5 text-xs text-[#66736b]">Important app updates and service announcements.</p></div>
-          <span className="text-xs font-medium text-[#087443]">On</span>
-        </div>
-      </section>
-      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-3">
-        <div className="flex items-start gap-3">
-          <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />
-          <div className="min-w-0 flex-1">
-            <h2 className="text-[13px] font-semibold text-[#18231d]">Device push notifications</h2>
-            <p className="mt-1 text-xs text-[#66736b]">{pushStatus[pushPermission]}</p>
-          </div>
-          {pushPermission === "granted" && <CheckCircle2 aria-label="Permission allowed" className="h-4 w-4 shrink-0 text-[#087443]" />}
-        </div>
-        <p className="mt-2 text-xs leading-4 text-[#66736b]">Your device or browser controls this permission. ICE push delivery is not configured here.</p>
-        <button type="button" aria-expanded={showPermissionHelp} onClick={() => setShowPermissionHelp((value) => !value)} className="mt-2 min-h-10 rounded-lg px-2 text-xs font-semibold text-[#087443] hover:bg-[#f1f7f2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087443]">
-          {showPermissionHelp ? "Hide permission help" : "How to change device permission"}
-        </button>
-        {showPermissionHelp && <p className="rounded-lg bg-[#f1f7f2] p-2.5 text-xs leading-4 text-[#52645a]">Open this site&apos;s settings from your browser or device notification controls to change permission. This app cannot change operating-system settings.</p>}
-      </section>
-      <p className="flex items-start gap-2 text-xs leading-4 text-[#52645a]"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#087443]" />Critical safety alerts are required and cannot be turned off here.</p>
-    </div>
-  );
-}
-
-function NotificationToggleRow({
-  title,
-  description,
-  checked,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="flex min-h-[68px] cursor-pointer items-center gap-3 border-b border-[#edf1ed] p-3 last:border-b-0">
-      <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium text-[#18231d]">{title}</span><span className="mt-0.5 block text-xs leading-4 text-[#66736b]">{description}</span></span>
-      <input type="checkbox" role="switch" checked={checked} onChange={(event) => onChange(event.target.checked)} aria-label={title} className="peer sr-only" />
-      <span aria-hidden="true" className="relative h-6 w-11 shrink-0 rounded-full bg-[#cbd4cd] transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:bg-[#087443] peer-checked:after:translate-x-5 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#087443]" />
-    </label>
   );
 }
 
@@ -3369,34 +3387,51 @@ function PermissionsScreen() {
   }, []);
 
   const locationStatus: Record<typeof locationPermission, string> = {
-    checking: "Checking browser permission",
-    granted: "Allowed in browser",
-    denied: "Blocked in browser",
-    prompt: "Not yet allowed",
-    unavailable: "Browser permission status unavailable",
+    checking: "Checking permission",
+    granted: "Allowed",
+    denied: "Not allowed",
+    prompt: "Ask every time",
+    unavailable: "Status unavailable",
+  };
+  const locationTone: Record<typeof locationPermission, "green" | "amber" | "gray"> = {
+    checking: "gray",
+    granted: "green",
+    denied: "amber",
+    prompt: "amber",
+    unavailable: "gray",
   };
 
   return (
     <div className="space-y-3 py-3">
       <section className="rounded-2xl border border-[#e1e8e2] bg-white p-4">
         <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-[#087443]" /><h2 className="text-sm font-semibold text-[#18231d]">Device permissions</h2></div>
-        <div className="mt-4 flex items-center gap-3 border-t border-[#edf1ed] pt-3">
-          <MapPin className="h-5 w-5 shrink-0 text-[#087443]" />
-          <div className="min-w-0 flex-1"><p className="text-[13px] font-medium text-[#18231d]">Location</p><p aria-live="polite" className="mt-0.5 text-xs text-[#66736b]">{locationStatus[locationPermission]}</p></div>
+        <div className="mt-4 flex items-start gap-3 border-t border-[#edf1ed] pt-3">
+          <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#087443]" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[13px] font-medium text-[#18231d]">Location</p>
+              <StatusPill tone={locationTone[locationPermission]}>{locationStatus[locationPermission]}</StatusPill>
+            </div>
+            <p aria-live="polite" className="mt-1 text-xs leading-5 text-[#66736b]">Used to include your location when you submit an incident report or activate a Personal Emergency Alert (SOS), so the right help can be sent to the right place.</p>
+          </div>
         </div>
-        <p className="mt-3 text-xs leading-5 text-[#66736b]">Permissions are controlled by your browser or device. ICE does not currently request location or camera access.</p>
-        <p className="mt-2 text-xs leading-5 text-[#66736b]">You can review or change permissions in your browser&apos;s site settings.</p>
+        <p className="mt-3 border-t border-[#edf1ed] pt-3 text-xs leading-5 text-[#66736b]">You can allow or change this permission at any time from your device settings.</p>
       </section>
     </div>
   );
 }
 
-function SettingsInfoScreen({ description }: { description: string }) {
+function SettingsInfoScreen({ description, contactEmail }: { description: string[]; contactEmail?: string }) {
   return (
-    <div className="py-3">
-      <section className="rounded-2xl border border-[#e1e8e2] bg-white p-4">
-        <p className="text-sm leading-6 text-[#52645a]">{description}</p>
+    <div className="space-y-3 py-3">
+      <section className="space-y-3 rounded-2xl border border-[#e1e8e2] bg-white p-4">
+        {description.map((paragraph, index) => <p key={index} className="text-sm leading-6 text-[#52645a]">{paragraph}</p>)}
       </section>
+      {contactEmail && (
+        <Button onClick={() => { window.location.href = `mailto:${contactEmail}`; }} className="w-full">
+          <Mail className="h-4 w-4" />Email {contactEmail}
+        </Button>
+      )}
     </div>
   );
 }

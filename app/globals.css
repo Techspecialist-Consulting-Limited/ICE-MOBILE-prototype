@@ -58,11 +58,23 @@
   .sos-halo::before {
     inset: 0;
     background: rgba(245, 95, 87, 0.14);
+    animation: sos-pulse 2.6s ease-in-out infinite;
   }
 
   .sos-halo::after {
     inset: 10px;
     background: rgba(245, 95, 87, 0.17);
+    animation: sos-pulse 2.6s ease-in-out infinite;
+    animation-delay: 0.3s;
+  }
+
+  @keyframes sos-pulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.08);
+    }
   }
 
   .sos-action {
