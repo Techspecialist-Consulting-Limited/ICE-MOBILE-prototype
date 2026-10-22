@@ -1568,7 +1568,7 @@ function AlertCarousel({
       if (step <= 0) return;
       const nextIndex = (Math.round(container.scrollLeft / step) + 1) % alerts.length;
       container.scrollTo({ left: nextIndex * step, behavior: reducedMotion ? "auto" : "smooth" });
-    }, 2000);
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [alerts.length]);
 
