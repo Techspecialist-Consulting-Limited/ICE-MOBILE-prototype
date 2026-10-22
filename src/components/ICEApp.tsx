@@ -2366,8 +2366,8 @@ function ReportResultScreen({ report, onReports, onHome }: { report: Report; onR
       <h2 className="mt-4 text-lg font-semibold text-[#1d2d24]">Report submitted</h2>
       <p className="mt-1 text-xs text-[#66736b]">Thank you for helping keep everyone safe.</p>
       <Panel className="mt-6 w-full text-left">
-        <p className="text-[10px] text-[#718078]">Reference number</p>
-        <p className="mt-1 text-sm font-semibold text-[#26372c]">{report.id}</p>
+        <p className="text-[10px] text-[#718078]">Report title</p>
+        <p className="mt-1 text-sm font-semibold text-[#26372c]">{report.summary}</p>
         <div className="mt-4 border-t border-[#e7ece8] pt-3"><p className="text-[10px] text-[#718078]">Current status</p><div className="mt-1 flex flex-wrap items-center gap-2"><StatusPill>{report.status}</StatusPill><StatusPill tone={report.reportType === "Incident Report" ? "blue" : "red"}>{report.reportType}</StatusPill><span className="text-[10px] text-[#718078]">{report.dateTime}</span></div></div>
       </Panel>
       <Button onClick={onReports} className="mt-5 w-full">View my reports</Button>
